@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Goals Overlay</title>
+<style>
+  html, body {
+    margin: 0; height: 100%; width: 100%; background: transparent; overflow: hidden;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  #stack {
+    position: fixed; left: 28px; top: 28px; width: 420px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .goal {
+    background: rgba(10,13,18,.78);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 12px; padding: 12px 14px 14px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.55);
+    backdrop-filter: blur(5px);
+  }
+  .top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .label { font-size: 13px; font-weight: 800; letter-spacing: 1.6px;
+           text-transform: uppercase; color: var(--c, #4ade80); }
+  .nums { font-size: 13px; color: #9fb0c4; font-variant-numeric: tabular-nums; }
+  .track { height: 12px; border-radius: 999px; background: rgba(255,255,255,.09); overflow: hidden; }
+  .fill  { height: 100%; width: 0%; border-radius: 999px;
+           background: linear-gradient(90deg, var(--c,#4ade80), color-mix(in srgb, var(--c,#4ade80) 55%, white));
+           box-shadow: 0 0 14px var(--c,#4ade80);
+           transition: width .9s cubic-bezier(.22,.9,.28,1); }
+</style>
+</head>
+<body>
+<div id="stack"></div>
+<script>
+const params  = new URLSearchParams(location.search);
+const channel = params.get('ch') || 'goals';
+
+let goals = {};
+const stack = document.getElementById('stack');
+const nodes = {};
+
+function build(key, g) {
+  const el = document.createElement('div');
+  el.className = 'goal';
+  el.style.setProperty('--c', g.color || '#4ade80');
+
+  const top = document.createElement('div'); top.className = 'top';
+  const label = document.createElement('div'); label.className = 'label'; label.textContent = g.label || key;
+  const nums  = document.createElement('div'); nums.className = 'nums';
+  top.append(label, nums);
+
+  const track = document.createElement('div'); track.className = 'track';
+  const fill  = document.createElement('div'); fill.className = 'fill';
+  track.appendChild(fill);
+
+  el.append(top, track);
+  stack.appendChild(el);
+  nodes[key] = { nums, fill };
+  paint(key, g);
+}
+
+function paint(key, g) {
+  const n = nodes[key]; if (!n) return;
+  const cur = Number(g.current) || 0;
+  const tgt = Math.max(1, Number(g.target) || 1);
+  const pct = Math.min(100, (cur / tgt) * 100);
+  n.nums.textContent = `${cur.toLocaleString()} / ${tgt.toLocaleString()}`;
+  n.nodes = n.fill;
+  requestAnimationFrame(() => { n.fill.style.width = pct.toFixed(1) + '%'; });
+}
+
+function render(cfg) {
+  if (!cfg || !cfg.goals) return;
+  for (const [key, g] of Object.entries(cfg.goals)) {
+    if (!nodes[key]) build(key, g);
+    else { nodes[key].fill.parentElement.parentElement.style.setProperty('--c', g.color || '#4ade80'); paint(key, g); }
+  }
+}
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws?role=overlay&ch=${encodeURIComponent(channel)}`);
+  ws.onmessage = (e) => {
+    let m; try { m = JSON.parse(e.data); } catch { return; }
+    if (m.kind === 'config') render(m.config);
+    else if (m.kind === 'event' && m.type === 'goal') render(m.config || m);
+  };
+  ws.onclose = () => setTimeout(connect, 1200);
+  ws.onerror = () => ws.close();
+}
+connect();
+</script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+# Secrets and machine-specific state -- never commit these.
+# Live config holds your channel and generated chat state.
+overlay-server/config.json
+
+# OBS / plugin backups routinely contain stream keys in plain text.
+backend-backup/
+*.bak
+*.pre-drop.json
+*.pre-fix.json
+*.pre-scene.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Debug captures / screenshots of the real desktop
+*.jpg
+launcher-screen.png
+dark-region.png
+probe-*.png
+shot-*.png
+
+# Local machine state
+*.log
+state.json

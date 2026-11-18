@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Topic Card</title>
+<style>
+  html, body {
+    margin: 0; height: 100%; width: 100%; background: transparent; overflow: hidden;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  #card {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: 64px;
+    min-width: 520px; max-width: 1100px;
+    padding: 14px 30px 16px;
+    border-radius: 14px;
+    background: rgba(10, 13, 18, .82);
+    border-left: 4px solid #38bdf8;
+    box-shadow: 0 12px 40px rgba(0,0,0,.6);
+    backdrop-filter: blur(6px);
+    opacity: 0; transition: opacity .35s ease, transform .35s ease;
+  }
+  #card.show { opacity: 1; }
+  .label {
+    font-size: 12px; font-weight: 800; letter-spacing: 2.6px; text-transform: uppercase;
+    color: #38bdf8; margin-bottom: 4px;
+  }
+  .text {
+    font-size: 26px; font-weight: 700; color: #f2f8ff;
+    text-shadow: 0 3px 16px rgba(0,0,0,.8); word-break: break-word;
+  }
+  .text:empty { display: none; }
+</style>
+</head>
+<body>
+<div id="card">
+  <div class="label" id="label">Now Playing</div>
+  <div class="text" id="text"></div>
+</div>
+<script>
+const params  = new URLSearchParams(location.search);
+const channel = params.get('ch') || 'topic';
+
+// vertical canvases need the card lifted clear of the platform's bottom UI
+const bottom = Number(params.get('bottom'));
+if (Number.isFinite(bottom) && bottom > 0) {
+  document.getElementById('card').style.bottom = bottom + 'px';
+}
+
+const card  = document.getElementById('card');
+const labelEl = document.getElementById('label');
+const textEl  = document.getElementById('text');
+
+function apply(label, text) {
+  labelEl.textContent = label || 'Now Playing';
+  textEl.textContent = text || '';
+  card.classList.toggle('show', Boolean(text));
+}
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws?role=overlay&ch=${encodeURIComponent(channel)}`);
+  ws.onmessage = (e) => {
+    let m; try { m = JSON.parse(e.data); } catch { return; }
+    if (m.kind === 'config' && m.config && m.config.topic) {
+      apply(m.config.topic.label, m.config.topic.text);
+    } else if (m.kind === 'event' && m.type === 'topic') {
+      apply(m.user, m.message);
+    }
+  };
+  ws.onclose = () => setTimeout(connect, 1200);
+  ws.onerror = () => ws.close();
+}
+connect();
+</script>
+</body>
+</html>

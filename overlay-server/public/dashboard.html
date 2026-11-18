@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DikGun — Control</title>
+<style>
+  :root {
+    --bg:#0b0e13; --panel:#141a22; --panel2:#1a212b; --line:#242d3a;
+    --text:#e6edf5; --muted:#8291a3; --accent:#4ade80; --blue:#38bdf8;
+    --amber:#fbbf24; --red:#f87171; --violet:#a78bfa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+  header{display:flex;align-items:center;gap:16px;padding:14px 20px;
+         border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10}
+  h1{font-size:15px;margin:0;letter-spacing:.4px;font-weight:700}
+  .pills{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+  .pill{display:flex;align-items:center;gap:6px;background:var(--panel2);
+        border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:12px;color:var(--muted)}
+  .dot{width:8px;height:8px;border-radius:50%;background:#5b6675}
+  .dot.on{background:var(--accent);box-shadow:0 0 8px var(--accent)}
+  .dot.warn{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+  nav{display:flex;gap:2px;padding:0 20px;border-bottom:1px solid var(--line);background:var(--panel)}
+  nav button{background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);
+             padding:11px 15px;font-size:13px;cursor:pointer;font-weight:600;border-radius:0}
+  nav button.active{color:var(--text);border-bottom-color:var(--accent)}
+  nav button:hover{color:var(--text)}
+  main{padding:20px;max-width:1500px;margin:0 auto}
+  .view{display:none}.view.active{display:block}
+  .cols{display:grid;grid-template-columns:1fr 420px;gap:18px}
+  @media(max-width:1100px){.cols{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .panel h2{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);
+            margin:0 0 12px;font-weight:700}
+  label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;
+        text-transform:uppercase;letter-spacing:.6px}
+  input,select{background:var(--panel2);border:1px solid var(--line);color:var(--text);
+               border-radius:7px;padding:8px 10px;font-size:13px;width:100%}
+  input:focus,select:focus{outline:none;border-color:var(--accent)}
+  button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;
+         padding:9px 12px;font-size:13px;cursor:pointer;font-weight:500;transition:.12s}
+  button:hover{border-color:var(--accent);background:#212a36}
+  button:active{transform:translateY(1px)}
+  button.primary{border-color:var(--accent);color:var(--accent)}
+  button.danger{border-color:var(--red);color:var(--red)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  .grid-events{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px}
+  .grid-events button{display:flex;align-items:center;gap:8px;text-align:left}
+  .em{font-size:16px}
+  .previews{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .prev{position:relative;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#000;aspect-ratio:16/9}
+  .prev iframe{position:absolute;top:0;left:0;width:1920px;height:1080px;border:0;
+               transform-origin:top left;pointer-events:none;background:transparent}
+  .prev .tag{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.65);
+             border:1px solid var(--line);border-radius:5px;padding:2px 7px;font-size:10px;color:var(--muted);z-index:2}
+  #log{font:12px/1.6 ui-monospace,"Cascadia Code",Consolas,monospace;background:#080b10;
+       border:1px solid var(--line);border-radius:9px;padding:10px;height:280px;overflow-y:auto}
+  .log-line{border-bottom:1px solid #121821;padding:2px 0}
+  .t{color:#4b586c}.ok{color:var(--accent)}.err{color:var(--red)}.info{color:var(--blue)}
+  .scenes{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+  .scenes button{padding:14px 10px;text-align:left}
+  .scenes button.current{border-color:var(--accent);color:var(--accent);background:#16241b}
+  .stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:10px}
+  .stat .k{font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted)}
+  .stat .v{font-size:19px;font-weight:700;margin-top:2px}
+  .srcs{display:flex;flex-direction:column;gap:6px;max-height:340px;overflow-y:auto}
+  .src{display:flex;align-items:center;gap:8px;background:var(--panel2);
+       border:1px solid var(--line);border-radius:7px;padding:7px 10px;font-size:12px}
+  .src span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .src button{padding:4px 9px;font-size:11px}
+  .hint{color:var(--muted);font-size:12px;margin-top:8px}
+  a{color:var(--blue)}
+  .kv{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #182029;font-size:12px}
+  .kv b{font-weight:600}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>DikGun — Control</h1>
+  <div class="pills">
+    <div class="pill"><span class="dot" id="dotSrv"></span><span id="srvTxt">server</span></div>
+    <div class="pill"><span class="dot" id="dotObs"></span><span id="obsTxt">OBS</span></div>
+    <div class="pill"><span class="dot" id="dotOvl"></span><span id="ovlTxt">overlays</span></div>
+  </div>
+</header>
+
+<nav>
+  <button class="active" data-view="test">Test</button>
+  <button data-view="overlays">Overlays</button>
+  <button data-view="obs">OBS</button>
+  <button data-view="admin">Admin</button>
+  <button data-view="settings">Settings</button>
+</nav>
+
+<main>
+  <!-- ============================ TEST ============================ -->
+  <section class="view active" id="view-test">
+    <div class="cols">
+      <div class="panel">
+        <h2>Fire an event</h2>
+        <div class="row">
+          <div style="flex:1;min-width:150px"><label>Username</label><input id="fUser" value="TestViewer"></div>
+          <div style="width:120px"><label>Amount</label><input id="fAmount" placeholder="optional"></div>
+        </div>
+        <div class="row"><div style="flex:1"><label>Message</label><input id="fMessage" placeholder="optional"></div></div>
+        <div class="grid-events" id="evButtons"></div>
+        <div class="row" style="margin-top:14px">
+          <button id="btnBurst">Burst ×5</button>
+          <button id="btnChat">Send chat line</button>
+          <button id="btnClear">Clear log</button>
+        </div>
+        <div class="hint">Alerts go to the <b>alerts</b> overlay; chat lines to <b>chat</b>.</div>
+      </div>
+
+      <div>
+        <div class="panel" style="margin-bottom:18px">
+          <h2>Live preview</h2>
+          <div class="previews" id="previews"></div>
+          <div class="hint">Previews are the real overlays, scaled down.</div>
+        </div>
+        <div class="panel">
+          <h2>Event log</h2>
+          <div id="log"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================== OVERLAYS ========================== -->
+  <section class="view" id="view-overlays">
+    <div class="cols">
+      <div class="panel">
+        <h2>Overlays in OBS</h2>
+        <div class="row">
+          <div style="flex:1"><label>Scene</label><select id="ovScene"></select></div>
+          <div style="display:flex;align-items:flex-end"><button id="ovRefresh">Refresh</button></div>
+        </div>
+        <div class="srcs" id="ovSources"></div>
+        <div class="hint">Toggle visibility live — no need to touch OBS.</div>
+      </div>
+      <div class="panel">
+        <h2>Browser source URLs</h2>
+        <div id="ovUrls"></div>
+        <div class="hint">Add each as a Browser Source at 1920×1080 with
+          “Shutdown source when not visible” <b>off</b>.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================= OBS ============================ -->
+  <section class="view" id="view-obs">
+    <div class="cols">
+      <div class="panel">
+        <h2>Scenes</h2>
+        <div class="scenes" id="sceneGrid"></div>
+      </div>
+      <div>
+        <div class="panel" style="margin-bottom:18px">
+          <h2>Output</h2>
+          <div class="row">
+            <button class="primary" id="btnStream">Stream</button>
+            <button class="primary" id="btnRecord">Record</button>
+          </div>
+          <div class="kv"><span>Streaming</span><b id="stStreaming">—</b></div>
+          <div class="kv"><span>Recording</span><b id="stRecording">—</b></div>
+        </div>
+        <div class="panel">
+          <h2>Performance</h2>
+          <div class="stats" id="statGrid"></div>
+          <div class="hint">Rendering lag = GPU too busy. Encoding lag = encoder saturated.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ ADMIN =========================== -->
+  <section class="view" id="view-admin">
+    <div class="cols">
+      <div>
+        <div class="panel" style="margin-bottom:18px">
+          <h2>Stream info</h2>
+          <div class="row"><div style="flex:1"><label>Title</label>
+            <input id="siTitle" placeholder="stream title"></div></div>
+          <div class="row"><div style="flex:1"><label>Game / category</label>
+            <input id="siGame" placeholder="e.g. Escape From Tarkov"></div></div>
+          <div class="row">
+            <button class="primary" id="siSave">Update both platforms</button>
+            <span class="hint" id="siStatus" style="align-self:center"></span>
+          </div>
+          <div class="hint">Routed through Streamer.bot so one click hits Twitch and YouTube.</div>
+        </div>
+
+        <div class="panel">
+          <h2>Topic card</h2>
+          <div class="row">
+            <div style="width:160px"><label>Label</label><input id="tpLabel" value="Now Playing"></div>
+            <div style="flex:1"><label>Text</label>
+              <input id="tpText" placeholder="e.g. Tarkov — Reserve, PvP"></div>
+          </div>
+          <div class="row">
+            <button class="primary" id="tpSend">Show on stream</button>
+            <button id="tpClear">Clear</button>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:18px">
+          <h2>Hint jar</h2>
+          <div id="hintList" class="srcs" style="max-height:200px"></div>
+          <div class="row" style="margin-top:10px">
+            <button class="primary" id="hintReveal">Reveal oldest</button>
+            <button id="hintClear">Clear all</button>
+            <span class="hint" id="hintCount" style="align-self:center"></span>
+          </div>
+          <div class="row" style="margin-top:6px">
+            <input id="hintTest" placeholder="type a fake !hint to test" style="flex:1">
+            <button id="hintSend">Test</button>
+          </div>
+          <div class="hint">Viewers type <b>!hint &lt;idea&gt;</b>. Nothing reaches stream until you reveal it.</div>
+        </div>
+
+        <div class="panel" style="margin-top:18px">
+          <h2>Poll</h2>
+          <div class="row"><div style="flex:1"><label>Question</label>
+            <input id="pollQ" placeholder="Next map?"></div></div>
+          <div class="row"><div style="flex:1"><label>Options (comma separated)</label>
+            <input id="pollO" placeholder="Reserve, Customs, Woods"></div></div>
+          <div class="row">
+            <button class="primary" id="pollStart">Start</button>
+            <button id="pollEnd">End + results</button>
+          </div>
+          <div id="pollRes" class="hint"></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="panel" style="margin-bottom:18px">
+          <h2>Panic</h2>
+          <button class="danger" id="panicBtn" style="width:100%">Mute mic + cut to BRB</button>
+          <div class="hint" id="panicHint">One button for the moments that need one.</div>
+        </div>
+        <div class="panel">
+          <h2>Audio</h2>
+          <div id="audioList"><div class="hint">open this tab to load</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================== SETTINGS ========================= -->
+  <section class="view" id="view-settings">
+    <div class="cols">
+      <div class="panel">
+        <h2>Alerts</h2>
+        <div class="row">
+          <div style="flex:1"><label>Duration (ms)</label><input id="sDur" type="number" min="800" step="100"></div>
+          <div style="flex:1"><label>Max queue</label><input id="sQueue" type="number" min="1" max="20"></div>
+        </div>
+        <div class="row">
+          <div style="flex:1"><label>Sound</label>
+            <select id="sSound"><option value="false">off</option><option value="true">on</option></select></div>
+        </div>
+        <h2 style="margin-top:18px">Starting soon</h2>
+        <div class="row">
+          <div style="flex:1"><label>Minutes</label><input id="sMinutes" type="number" min="1" max="120"></div>
+        </div>
+        <h2 style="margin-top:18px">Goals</h2>
+        <div class="row">
+          <div style="flex:1"><label>Follower target</label><input id="sFollowTarget" type="number"></div>
+          <div style="flex:1"><label>Follower current</label><input id="sFollowCurrent" type="number"></div>
+        </div>
+        <div class="row">
+          <div style="flex:1"><label>Sub target</label><input id="sSubTarget" type="number"></div>
+          <div style="flex:1"><label>Sub current</label><input id="sSubCurrent" type="number"></div>
+        </div>
+        <div class="row"><button class="primary" id="btnSave">Save settings</button></div>
+        <div class="hint" id="saveMsg"></div>
+      </div>
+      <div class="panel">
+        <h2>Overlay pages</h2>
+        <div id="pageLinks"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const EVENTS = [
+  {type:'follow',  em:'💚', label:'Follow'},
+  {type:'sub',     em:'⭐', label:'Subscribe'},
+  {type:'resub',   em:'🔁', label:'Resub'},
+  {type:'giftsub', em:'🎁', label:'Gift Sub'},
+  {type:'cheer',   em:'💎', label:'Cheer'},
+  {type:'raid',    em:'🚀', label:'Raid'},
+  {type:'tip',     em:'💰', label:'Tip'},
+  {type:'host',    em:'📺', label:'Host'},
+  {type:'test',    em:'🧪', label:'Raw test'},
+];
+const OVERLAYS = [
+  {name:'alerts',        label:'Alerts'},
+  {name:'chat',          label:'Chat'},
+  {name:'goals',         label:'Goals'},
+  {name:'starting-soon', label:'Starting Soon'},
+];
+
+// ---------------------------------------------------------------- utilities
+function log(msg, cls='') {
+  const el = $('log');
+  const t = new Date().toLocaleTimeString('en-US',{hour12:false});
+  const div = document.createElement('div');
+  div.className='log-line';
+  div.innerHTML = `<span class="t">${t}</span> <span class="${cls}">${msg}</span>`;
+  el.appendChild(div); el.scrollTop = el.scrollHeight;
+}
+async function api(path, opts={}) {
+  const res = await fetch(path, {headers:{'Content-Type':'application/json'}, ...opts});
+  const data = await res.json().catch(()=>({}));
+  if (!res.ok) throw new Error(data.detail || res.statusText);
+  return data;
+}
+
+// ------------------------------------------------------------- event firing
+async function fire(type) {
+  const body = {
+    type,
+    user: $('fUser').value || 'TestViewer',
+    amount: $('fAmount').value || null,
+    message: $('fMessage').value || '',
+  };
+  try {
+    const d = await api('/api/event', {method:'POST', body:JSON.stringify(body)});
+    log(`✓ ${type} → ${d.delivered} overlay(s)`, d.delivered ? 'ok' : 'err');
+    if (!d.delivered) log('  no overlay connected for this channel', 'err');
+  } catch (e) { log(`✗ ${type}: ${e.message}`, 'err'); }
+}
+const wrap = $('evButtons');
+for (const e of EVENTS) {
+  const b = document.createElement('button');
+  b.innerHTML = `<span class="em">${e.em}</span><span>${e.label}</span>`;
+  b.onclick = () => fire(e.type);
+  wrap.appendChild(b);
+}
+$('btnBurst').onclick = async () => {
+  const pick = EVENTS.filter(e=>e.type!=='test');
+  for (let i=0;i<5;i++){ await fire(pick[i%pick.length].type); await new Promise(r=>setTimeout(r,300)); }
+};
+$('btnChat').onclick = async () => {
+  const names = ['Alice','Bob','Carol','Dave','Eve'];
+  const msgs  = ['nice one','that was clean','GG','how long have you been live?','chat is here'];
+  try {
+    await api('/api/event', {method:'POST', body:JSON.stringify({
+      type:'chat', channel:'chat',
+      user: names[Math.floor(Math.random()*names.length)],
+      message: msgs[Math.floor(Math.random()*msgs.length)],
+    })});
+    log('✓ chat line sent','ok');
+  } catch(e){ log(`✗ chat: ${e.message}`,'err'); }
+};
+$('btnClear').onclick = () => { $('log').innerHTML=''; };
+
+// ------------------------------------------------------------- previews
+const previewFrames = {};
+for (const ov of OVERLAYS) {
+  const box = document.createElement('div');
+  box.className='prev';
+  const ifr = document.createElement('iframe');
+  ifr.src = `/overlay/${ov.name}`;
+  box.appendChild(ifr);
+  const tag = document.createElement('div'); tag.className='tag'; tag.textContent = ov.label;
+  box.appendChild(tag);
+  $('previews').appendChild(box);
+  previewFrames[ov.name] = { box, ifr };
+}
+function scalePreviews() {
+  for (const {box, ifr} of Object.values(previewFrames)) {
+    const s = box.clientWidth / 1920;
+    ifr.style.transform = `scale(${s})`;
+  }
+}
+window.addEventListener('resize', scalePreviews);
+scalePreviews();
+
+// ------------------------------------------------------------- status
+async function pollStatus() {
+  try {
+    const s = await api('/api/status');
+    $('dotSrv').className = 'dot on';
+    $('srvTxt').textContent = 'server ok';
+    $('dotObs').className = 'dot' + (s.obs.connected ? ' on' : ' warn');
+    $('obsTxt').textContent = s.obs.connected ? 'OBS connected' : 'OBS offline';
+    const total = Object.values(s.overlays||{}).reduce((a,b)=>a+b,0);
+    $('dotOvl').className = 'dot' + (total ? ' on' : ' warn');
+    $('ovlTxt').textContent = `${total} overlay${total===1?'':'s'}`;
+  } catch {
+    $('dotSrv').className='dot'; $('srvTxt').textContent='server down';
+  }
+}
+pollStatus(); setInterval(pollStatus, 2500);
+
+// ------------------------------------------------------------- OBS tab
+async function loadScenes() {
+  try {
+    const d = await api('/api/obs/scenes');
+    const grid = $('sceneGrid'); grid.innerHTML='';
+    for (const name of d.scenes) {
+      const b = document.createElement('button');
+      b.textContent = name;
+      if (name === d.current) b.classList.add('current');
+      b.onclick = async () => {
+        try { await api('/api/obs/scene',{method:'POST',body:JSON.stringify({name})}); log(`scene → ${name}`,'info'); loadScenes(); }
+        catch(e){ log(`✗ scene: ${e.message}`,'err'); }
+      };
+      grid.appendChild(b);
+    }
+  } catch(e) { $('sceneGrid').innerHTML = `<div class="hint">${e.message}</div>`; }
+}
+async function loadStats() {
+  try {
+    const d = await api('/api/obs/stats');
+    $('stStreaming').textContent = d.streaming ? 'LIVE' : 'off';
+    $('stStreaming').style.color = d.streaming ? 'var(--accent)' : 'var(--muted)';
+    $('stRecording').textContent = d.recording ? 'recording' : 'off';
+    $('stRecording').style.color = d.recording ? 'var(--accent)' : 'var(--muted)';
+    const items = [
+      ['FPS', d.fps], ['CPU %', d.cpu], ['RAM MB', d.memoryMB],
+      ['Render lag', d.renderLag], ['Encode lag', d.encodeLag],
+    ];
+    $('statGrid').innerHTML = items.map(([k,v]) =>
+      `<div class="stat"><div class="k">${k}</div><div class="v">${v ?? '—'}</div></div>`).join('');
+  } catch(e) { $('statGrid').innerHTML = `<div class="hint">${e.message}</div>`; }
+}
+$('btnStream').onclick = async () => {
+  try { await api('/api/obs/stream',{method:'POST',body:JSON.stringify({action:'toggle'})}); loadStats(); }
+  catch(e){ log(`✗ stream: ${e.message}`,'err'); }
+};
+$('btnRecord').onclick = async () => {
+  try { await api('/api/obs/record',{method:'POST',body:JSON.stringify({action:'toggle'})}); loadStats(); }
+  catch(e){ log(`✗ record: ${e.message}`,'err'); }
+};
+
+// --------------------------------------------------------- overlays tab
+async function loadOvScenes() {
+  try {
+    const d = await api('/api/obs/scenes');
+    const sel = $('ovScene'); const prev = sel.value;
+    sel.innerHTML = '';
+    for (const n of d.scenes) {
+      const o = document.createElement('option'); o.value=n; o.textContent=n; sel.appendChild(o);
+    }
+    if (d.scenes.includes(prev)) sel.value = prev; else sel.value = d.current;
+    await loadOvSources();
+  } catch(e){ $('ovSources').innerHTML = `<div class="hint">${e.message}</div>`; }
+}
+async function loadOvSources() {
+  const scene = $('ovScene').value;
+  if (!scene) return;
+  try {
+    const d = await api(`/api/obs/sources?scene=${encodeURIComponent(scene)}`);
+    const box = $('ovSources'); box.innerHTML='';
+    for (const s of d.sources) {
+      const row = document.createElement('div'); row.className='src';
+      const nm = document.createElement('span'); nm.textContent = s.name;
+      const btn = document.createElement('button');
+      btn.textContent = s.visible ? 'Hide' : 'Show';
+      btn.className = s.visible ? 'danger' : 'primary';
+      btn.onclick = async () => {
+        try {
+          await api('/api/obs/source_visibility',{method:'POST',
+            body:JSON.stringify({scene, source:s.name, visible:!s.visible})});
+          log(`${s.visible?'hid':'showed'} ${s.name}`, 'info');
+          loadOvSources();
+        } catch(e){ log(`✗ visibility: ${e.message}`,'err'); }
+      };
+      row.append(nm, btn); box.appendChild(row);
+    }
+  } catch(e){ $('ovSources').innerHTML = `<div class="hint">${e.message}</div>`; }
+}
+$('ovRefresh').onclick = loadOvScenes;
+$('ovScene').onchange = loadOvSources;
+
+// overlay URL list + page links
+const origin = location.origin;
+$('ovUrls').innerHTML = OVERLAYS.map(o =>
+  `<div class="kv"><span>${o.label}</span><a href="/overlay/${o.name}" target="_blank">${origin}/overlay/${o.name}</a></div>`
+).join('');
+$('pageLinks').innerHTML = OVERLAYS.map(o =>
+  `<div class="kv"><span>${o.label}</span><a href="/overlay/${o.name}" target="_blank">open ↗</a></div>`
+).join('');
+
+// --------------------------------------------------------- settings tab
+function fillSettings(cfg) {
+  $('sDur').value = cfg.alerts.duration_ms;
+  $('sQueue').value = cfg.alerts.max_queue;
+  $('sSound').value = String(cfg.alerts.sound);
+  $('sMinutes').value = cfg.starting_soon.minutes;
+  $('sFollowTarget').value = cfg.goals.followers.target;
+  $('sFollowCurrent').value = cfg.goals.followers.current;
+  $('sSubTarget').value = cfg.goals.subs.target;
+  $('sSubCurrent').value = cfg.goals.subs.current;
+}
+api('/api/config').then(fillSettings).catch(e=>log(`✗ config: ${e.message}`,'err'));
+
+$('btnSave').onclick = async () => {
+  const body = {config:{
+    alerts:{ duration_ms:Number($('sDur').value), max_queue:Number($('sQueue').value), sound:$('sSound').value==='true' },
+    starting_soon:{ minutes:Number($('sMinutes').value) },
+    goals:{
+      followers:{ current:Number($('sFollowCurrent').value), target:Number($('sFollowTarget').value) },
+      subs:{ current:Number($('sSubCurrent').value), target:Number($('sSubTarget').value) },
+    },
+  }};
+  try {
+    const d = await api('/api/config',{method:'PUT', body:JSON.stringify(body)});
+    fillSettings(d.config);
+    $('saveMsg').textContent = 'Saved — overlays updated live.';
+    log('settings saved', 'ok');
+  } catch(e){ $('saveMsg').textContent = `Save failed: ${e.message}`; }
+};
+
+// ------------------------------------------------------------- admin
+async function loadAdmin() {
+  try {
+    const info = await api('/api/stream/info');
+    $('siTitle').value = info.title || '';
+    $('siGame').value = info.game || '';
+    $('siStatus').textContent = info.streamerbot ? 'Streamer.bot reachable' : 'Streamer.bot HTTP server off';
+    $('siStatus').style.color = info.streamerbot ? 'var(--accent)' : 'var(--amber)';
+  } catch (e) { log(`✗ stream info: ${e.message}`, 'err'); }
+  loadAudio();
+  loadHints();
+}
+
+async function loadAudio() {
+  const box = $('audioList');
+  try {
+    const d = await api('/api/obs/audio');
+    box.innerHTML = '';
+    for (const s of d.sources) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px';
+      const nm = document.createElement('span');
+      nm.textContent = s.name;
+      nm.style.cssText = 'flex:0 0 120px;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      const rng = document.createElement('input');
+      rng.type = 'range'; rng.min = -60; rng.max = 0; rng.step = 1; rng.value = s.volumeDb;
+      rng.style.flex = '1';
+      const val = document.createElement('span');
+      val.textContent = (s.volumeDb <= -60 ? '-inf' : s.volumeDb.toFixed(0)) + 'dB';
+      val.style.cssText = 'width:52px;font-size:11px;color:var(--muted);text-align:right';
+      const btn = document.createElement('button');
+      btn.textContent = s.muted ? 'Unmute' : 'Mute';
+      if (s.muted) btn.className = 'danger';
+      btn.style.cssText = 'font-size:11px;padding:3px 8px';
+      rng.oninput = () => { val.textContent = (rng.value <= -60 ? '-inf' : rng.value) + 'dB'; };
+      rng.onchange = async () => {
+        try { await api('/api/obs/audio', {method:'POST', body: JSON.stringify({source: s.name, volume_db: Number(rng.value)})}); }
+        catch (e) { log(`✗ volume: ${e.message}`, 'err'); }
+      };
+      btn.onclick = async () => {
+        try { await api('/api/obs/audio', {method:'POST', body: JSON.stringify({source: s.name, muted: !s.muted})}); loadAudio(); }
+        catch (e) { log(`✗ mute: ${e.message}`, 'err'); }
+      };
+      row.append(nm, rng, val, btn);
+      box.appendChild(row);
+    }
+    if (!d.sources.length) box.innerHTML = '<div class="hint">no audio sources found</div>';
+  } catch (e) { box.innerHTML = `<div class="hint">${e.message}</div>`; }
+}
+
+$('siSave').onclick = async () => {
+  $('siStatus').textContent = 'sending…';
+  try {
+    const r = await api('/api/stream/info', {method:'POST',
+      body: JSON.stringify({title: $('siTitle').value, game: $('siGame').value})});
+    if (r.ok) { $('siStatus').textContent = 'updated'; log('stream info updated', 'ok'); }
+    else { $('siStatus').textContent = 'not sent'; log(`✗ ${r.hint || 'failed'}`, 'err'); }
+  } catch (e) { $('siStatus').textContent = 'error'; log(`✗ ${e.message}`, 'err'); }
+};
+
+$('tpSend').onclick = async () => {
+  try {
+    const r = await api('/api/topic', {method:'POST',
+      body: JSON.stringify({label: $('tpLabel').value, text: $('tpText').value})});
+    log(`topic shown -> ${r.delivered} overlay(s)`, 'ok');
+  } catch (e) { log(`✗ topic: ${e.message}`, 'err'); }
+};
+$('tpClear').onclick = async () => {
+  $('tpText').value = '';
+  try {
+    await api('/api/topic', {method:'POST', body: JSON.stringify({label: $('tpLabel').value, text: ''})});
+    log('topic cleared', 'info');
+  } catch (e) { log(`✗ ${e.message}`, 'err'); }
+};
+
+$('panicBtn').onclick = async () => {
+  try {
+    const r = await api('/api/panic', {method:'POST'});
+    $('panicHint').textContent = r.did.join(' · ');
+    log(`PANIC: ${r.did.join(', ')}`, 'err');
+  } catch (e) { log(`✗ panic: ${e.message}`, 'err'); }
+};
+
+async function loadHints() {
+  try {
+    const d = await api('/api/chat/state');
+    const box = $('hintList');
+    box.innerHTML = '';
+    for (const h of d.hints) {
+      const row = document.createElement('div');
+      row.className = 'src';
+      const nm = document.createElement('span');
+      nm.innerHTML = `<b style="color:var(--blue)">${h.user}</b> — ${h.text}`;
+      nm.title = h.text;
+      row.appendChild(nm);
+      box.appendChild(row);
+    }
+    if (!d.hints.length) box.innerHTML = '<div class="hint">jar is empty</div>';
+    $('hintCount').textContent =
+      `${d.hints.length} waiting · deaths ${d.counters.deaths ?? 0} · kills ${d.counters.kills ?? 0}`;
+    if (d.poll) {
+      const p = d.poll;
+      const parts = Object.entries(p.counts || {}).map(([k, v]) => `${k}: ${v}`).join('   ');
+      $('pollRes').textContent = p.question ? `${p.active ? 'LIVE' : 'ended'} — ${p.question} · ${parts}` : '';
+    }
+  } catch (e) { log(`✗ chat state: ${e.message}`, 'err'); }
+}
+
+$('hintReveal').onclick = async () => {
+  try {
+    const r = await api('/api/hints/reveal', {method:'POST', body: JSON.stringify({})});
+    log(`hint revealed from ${r.hint.user} -> ${r.delivered} overlay(s)`, 'ok');
+    loadHints();
+  } catch (e) { log(`✗ reveal: ${e.message}`, 'err'); }
+};
+$('hintClear').onclick = async () => {
+  try {
+    const r = await api('/api/hints/clear', {method:'POST'});
+    log(`cleared ${r.removed} hint(s)`, 'info');
+    loadHints();
+  } catch (e) { log(`✗ clear: ${e.message}`, 'err'); }
+};
+$('hintSend').onclick = async () => {
+  const text = $('hintTest').value || 'test hint';
+  try {
+    await api('/api/chat/simulate', {method:'POST',
+      body: JSON.stringify({user: 'TestViewer', message: '!hint ' + text})});
+    $('hintTest').value = '';
+    loadHints();
+  } catch (e) { log(`✗ sim: ${e.message}`, 'err'); }
+};
+$('pollStart').onclick = async () => {
+  const q = $('pollQ').value.trim();
+  const opts = $('pollO').value.split(',').map(s => s.trim()).filter(Boolean);
+  if (!q || opts.length < 2) { log('poll needs a question and 2+ options', 'err'); return; }
+  try {
+    await api('/api/poll/start', {method:'POST', body: JSON.stringify({question: q, options: opts})});
+    log(`poll started: ${q} (${opts.join(' / ')})`, 'ok');
+    loadHints();
+  } catch (e) { log(`✗ poll: ${e.message}`, 'err'); }
+};
+$('pollEnd').onclick = async () => {
+  try {
+    const r = await api('/api/poll/end', {method:'POST'});
+    const parts = Object.entries(r.results.counts).map(([k, v]) => `${k}=${v}`).join(', ');
+    $('pollRes').textContent = `ended — ${r.results.question}: ${parts} (${r.results.total} votes)`;
+    log(`poll ended: ${parts}`, 'info');
+  } catch (e) { log(`✗ poll end: ${e.message}`, 'err'); }
+};
+
+// ------------------------------------------------------------- tabs
+document.querySelectorAll('nav button').forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    b.classList.add('active');
+    $(`view-${b.dataset.view}`).classList.add('active');
+    if (b.dataset.view === 'obs') { loadScenes(); loadStats(); }
+    if (b.dataset.view === 'overlays') { loadOvScenes(); }
+    if (b.dataset.view === 'admin') { loadAdmin(); }
+    if (b.dataset.view === 'test') { scalePreviews(); }
+  };
+});
+
+// ------------------------------------------------------- live socket
+function connectWs() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws?role=control`);
+  ws.onopen = () => log('dashboard connected', 'info');
+  ws.onmessage = (e) => {
+    let m; try { m = JSON.parse(e.data); } catch { return; }
+    if (m.kind === 'event') {
+      log(`⇢ ${m.type} ${m.user} → ${m.delivered} overlay(s)`, m.delivered ? 'ok' : 'err');
+    } else if (m.kind === 'obs_event') {
+      if (m.event === 'CurrentProgramSceneChanged') log(`OBS scene → ${m.data.sceneName}`, 'info');
+      if (m.event === 'StreamStateChanged') log(`OBS stream → ${m.data.outputState}`, 'info');
+    }
+  };
+  ws.onclose = () => { log('dashboard disconnected — retrying', 'err'); setTimeout(connectWs, 1500); };
+  ws.onerror = () => ws.close();
+}
+connectWs();
+log('ready');
+</script>
+</body>
+</html>

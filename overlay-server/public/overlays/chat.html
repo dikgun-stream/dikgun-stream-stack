@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Chat Overlay</title>
+<style>
+  html, body {
+    margin: 0; height: 100%; width: 100%; background: transparent; overflow: hidden;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  #wrap {
+    position: fixed; left: 28px; bottom: 28px; width: 560px;
+    display: flex; flex-direction: column; justify-content: flex-end; gap: 6px;
+  }
+  .msg {
+    display: flex; gap: 8px; align-items: baseline;
+    padding: 8px 14px; border-radius: 10px;
+    background: rgba(10, 13, 18, .72);
+    border-left: 3px solid var(--c, #4ade80);
+    box-shadow: 0 6px 22px rgba(0,0,0,.5);
+    transform: translateX(-20px); opacity: 0;
+    transition: transform .28s ease, opacity .28s ease;
+    backdrop-filter: blur(4px);
+  }
+  .msg.in { transform: translateX(0); opacity: 1; }
+  .msg.out { opacity: 0; transform: translateX(-16px); }
+  .msg.sys {
+    background: rgba(20, 32, 24, .78);
+    border-left-color: #4ade80;
+    color: #a7f3d0; font-size: 15px; font-style: italic;
+    padding: 5px 12px;
+  }
+  .user { font-weight: 800; font-size: 19px; text-shadow: 0 2px 8px rgba(0,0,0,.8); white-space: nowrap; }
+  .text { font-size: 18px; color: #eaf2fb; text-shadow: 0 2px 8px rgba(0,0,0,.85); word-break: break-word; }
+  .badge {
+    font-size: 11px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 5px; border: 1px solid var(--c, #4ade80); color: var(--c, #4ade80);
+  }
+</style>
+</head>
+<body>
+<div id="wrap"></div>
+<script>
+const params  = new URLSearchParams(location.search);
+const channel = params.get('ch') || 'chat';
+
+let settings = { max_messages: 12 };
+const wrap = document.getElementById('wrap');
+
+// Vertical canvases need the chat lifted out of the platform's bottom UI band.
+//   ?bottom=470  -> leave 470px clear at the bottom
+//   ?width=560   -> narrower column for a 1080-wide canvas
+const bottomParam = Number(params.get('bottom'));
+if (Number.isFinite(bottomParam) && bottomParam > 0) {
+  wrap.style.bottom = bottomParam + 'px';
+}
+const widthParam = Number(params.get('width'));
+if (Number.isFinite(widthParam) && widthParam > 0) {
+  wrap.style.width = widthParam + 'px';
+}
+
+// deterministic colour per username so people stay recognisable
+const PALETTE = ['#4ade80','#38bdf8','#fbbf24','#f472b6','#a78bfa','#fb923c','#34d399','#60a5fa'];
+function colourFor(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return PALETTE[h % PALETTE.length];
+}
+
+function addMessage(evt) {
+  const max = Math.max(1, Number(settings.max_messages) || 12);
+
+  // command feedback (hint saved, vote recorded, ...) renders as a system line
+  if (evt.type === 'system') {
+    const sys = document.createElement('div');
+    sys.className = 'msg sys';
+    sys.textContent = '▸ ' + (evt.message || '');
+    wrap.appendChild(sys);
+    requestAnimationFrame(() => sys.classList.add('in'));
+    while (wrap.children.length > max) wrap.removeChild(wrap.firstElementChild);
+    setTimeout(() => {
+      sys.classList.remove('in'); sys.classList.add('out');
+      setTimeout(() => sys.remove(), 320);
+    }, 12000);
+    return;
+  }
+
+  const c = colourFor(evt.user || 'anon');
+  const el = document.createElement('div');
+  el.className = 'msg';
+  el.style.setProperty('--c', c);
+
+  if (evt.badge) {
+    const b = document.createElement('span');
+    b.className = 'badge'; b.textContent = evt.badge; b.style.setProperty('--c', c);
+    el.appendChild(b);
+  }
+  const u = document.createElement('span');
+  u.className = 'user'; u.textContent = (evt.user || 'anon') + ':';
+  u.style.color = c;
+  const t = document.createElement('span');
+  t.className = 'text'; t.textContent = evt.message || '';
+  el.append(u, t);
+
+  wrap.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('in'));
+
+  while (wrap.children.length > max) wrap.removeChild(wrap.firstElementChild);
+
+  setTimeout(() => {
+    el.classList.remove('in'); el.classList.add('out');
+    setTimeout(() => el.remove(), 320);
+  }, 180000);
+}
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws?role=overlay&ch=${encodeURIComponent(channel)}`);
+  ws.onmessage = (e) => {
+    let m; try { m = JSON.parse(e.data); } catch { return; }
+    if (m.kind === 'config' && m.config && m.config.chat) {
+      settings = { ...settings, ...m.config.chat };
+    } else if (m.kind === 'event') {
+      addMessage(m);
+    }
+  };
+  ws.onclose = () => setTimeout(connect, 1200);
+  ws.onerror = () => ws.close();
+}
+connect();
+window.__chat = addMessage;
+</script>
+</body>
+</html>
