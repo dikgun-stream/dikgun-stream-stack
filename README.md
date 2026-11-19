@@ -289,6 +289,47 @@ A co-op R.E.P.O. recording peaked at **0.58** and produced 7 usable windows
 across the library so far.
 
 
+
+### Markers that are text or pale icons
+
+`marker_scan.py` handles three marker styles, chosen by the template folder:
+
+| Mode | Template files | Used for |
+|---|---|---|
+| colour mask | `mask.png` (+ optional `ref.png`) | Deadlock's red ring |
+| grayscale | `mask.png` + `region.json` with `"mode": "gray"` | Battlefield 6's skull |
+| OCR | `text.json` naming a word | attempted for BF6's "KILL" label, abandoned |
+
+`region.json` also sets the search box: **not every marker is centred**.
+Battlefield's banner sits around x=530-830, which a centre crop never contains.
+
+### Battlefield 6
+
+The kill tell is a small **white skull** icon, and it moves around far more than
+expected. Measured across three confirmed kills in two clips:
+
+```
+skull at (689,633) 38x40
+skull at (824,704) 45x26
+skull at (694,634) 39x37
+```
+
+Two lessons that cost real time:
+
+- **Threshold matters enormously.** At 0.45 the detector fires ~116 times per
+  clip. Confirmed kills score 0.78-0.81, so 0.75 is the working floor.
+- **Battle Royale uses a different icon** -- a gold skull with a down arrow on
+  its left, not the white one. The white template cannot match it by design, so
+  BR recordings are missed rather than falsely matched.
+
+Scan of 44 BF6 clips at 0.75: 353 hits -> 60 windows. Only **two** of those are
+confirmed by a human, so treat the rest as candidates.
+
+Text-based detection was tried and abandoned: the "KILL" label is ~14px tall,
+light grey on a bright snowy map. OCR reads "TANK BUSTER" and "VEHICLE
+DESTROYED" from the same banner but never "KILL", and a pixel template scores
+only 0.58 on its own source frame.
+
 ### Tuning how many clips you get
 
 Two knobs, and they pull in different directions.
