@@ -34,3 +34,7 @@ overlay-server/laughter_scan.log
 overlay-server/kill_index.json
 overlay-server/marker_index.json
 overlay-server/.*.lock
+
+# Brand assets are deliverables, not debug captures. The *.jpg rule above is
+# for screenshots of the real desktop; these are commissioned artwork.
+!brand/**/*.jpg
