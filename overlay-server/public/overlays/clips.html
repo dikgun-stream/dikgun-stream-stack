@@ -177,11 +177,44 @@
   .v .stamp { width: 22vmin; }
   .v .stamp .n { font-size: 3.2vmin; }
   .v #title { left: var(--u6); right: var(--u6); max-width: none; font-size: 1.8vmin; }
+/* ---------------------------------------------------------------------- wipe
+   A slab that sweeps across the frame between clips. The source swap happens
+   while the screen is covered, so changing clip does not read as a hard jump.
+
+   Geometry: 124% wide and offset -12%, so translateX(0) covers the viewport
+   with room for the leading edge, and +-100% parks it fully off either side. */
+#wipe {
+  position: fixed; top: -1px; bottom: -1px;
+  left: -12%; width: 124%;
+  z-index: 90; pointer-events: none;
+  background: var(--red);
+  transform: translateX(-100%);
+  will-change: transform;
+}
+/* ink edge so the sweep reads as a moving object rather than a flash */
+#wipe::before {
+  content: '';
+  position: absolute; top: 0; bottom: 0; right: 0;
+  width: calc(var(--rule-slab) + 8px);
+  background: var(--ink);
+}
+/* paper hairline beside it, matching the plate rules */
+#wipe::after {
+  content: '';
+  position: absolute; top: 0; bottom: 0;
+  right: calc(var(--rule-slab) + 8px);
+  width: var(--rule-thin);
+  background: var(--paper);
+}
+/* vertical scenes are narrower: keep the edge proportional */
+.v #wipe::before, .v #wipe::after { width: calc(var(--rule-mid) + 6px); }
+
 </style>
 </head>
 <body>
 <div id="stage">
   <video id="vid" playsinline preload="auto"></video>
+  <div id="wipe"></div>
   <div id="shade"></div>
   <div id="prog"></div>
   <div id="title"></div>
@@ -285,44 +318,119 @@
     gameEl.classList.toggle('is-long', (name || '').length > 16);
   }
 
-  function play(index) {
+  // ------------------------------------------------------------ transitions
+  const wipeEl = document.getElementById('wipe');
+  const WIPE_MS = 260;          // one sweep, in or out
+  let switching = false;        // guards against overlapping transitions
+  let firstClip = true;
+
+  function wipeTo(xPercent, ms) {
+    return new Promise((resolve) => {
+      if (ms <= 0) {
+        // park instantly: only safe while the slab is off-screen
+        wipeEl.style.transition = 'none';
+        wipeEl.style.transform = `translateX(${xPercent}%)`;
+        void wipeEl.offsetWidth;        // flush, so the next move animates
+        resolve();
+        return;
+      }
+      wipeEl.style.transition = `transform ${ms}ms cubic-bezier(.65,.06,.36,1)`;
+      wipeEl.style.transform = `translateX(${xPercent}%)`;
+      setTimeout(resolve, ms + 15);
+    });
+  }
+
+  /* Load a clip and resolve once it is actually painting a frame. Resolving on
+     the transfer rather than a fixed delay means a slow decode does not reveal
+     a black frame; the timeout means a broken file cannot stall the loop. */
+  function loadAndPlay(c, maxWaitMs) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        setTimeout(resolve, 40);       // one frame of margin
+      };
+
+      vid.addEventListener('playing', finish, { once: true });
+
+      try { vid.src = encPath(c); } catch { /* fall through to the timeout */ }
+
+      const seek = () => {
+        // jump into the recording so clips do not always open on a menu screen
+        const dur = Number.isFinite(vid.duration) && vid.duration > 30 ? vid.duration : 0;
+        const from = Number.isFinite(startFrac) && startFrac > 0 ? startFrac : 0;
+        const maxStart = Math.max(0, dur - Math.max(20, playLen || 20));
+        const target = Math.min(maxStart, dur * from + Math.random() * 30);
+        if (target > 1 && dur) {
+          try { vid.currentTime = target; } catch { /* not seekable yet */ }
+        }
+        deadline = playLen > 0 ? Date.now() + playLen * 1000 : 0;
+      };
+
+      if (vid.readyState >= 1) seek();
+      else vid.addEventListener('loadedmetadata', seek, { once: true });
+
+      vid.play().catch(() => {
+        // autoplay refused: retry muted once, then give up quietly
+        vid.muted = true;
+        vid.play().catch(() => {
+          msgEl.textContent = 'CLICK TO PLAY';
+          msgEl.classList.remove('hide');
+          finish();
+        });
+      });
+
+      // Hard ceiling: never hold the cover longer than this. These source
+      // files are huge, and a frozen red screen is worse than a cut.
+      setTimeout(finish, maxWaitMs || 280);
+    });
+  }
+
+  async function play(index, opts) {
+    opts = opts || {};
+    if (switching) return;
     if (!order.length) {
       msgEl.textContent = 'NO CLIPS FOUND';
       msgEl.classList.remove('hide');
       return;
     }
-    pos = ((index % order.length) + order.length) % order.length;
-    const c = order[pos];
 
-    labelGame(c.game);
-    titleEl.textContent = c.title || c.file;
-    idxEl.textContent = `${pos + 1} / ${order.length}`;
-    msgEl.classList.add('hide');
-    progEl.style.width = '0%';
+    // The very first clip loads without a wipe - there is nothing to transition
+    // from, and a sweep before the stream has started looks like a fault.
+    const instant = opts.instant === true || firstClip;
 
-    vid.src = encPath(c);
-
-    const seek = () => {
-      // jump into the recording so clips do not always open on a menu screen
-      const dur = Number.isFinite(vid.duration) && vid.duration > 30 ? vid.duration : 0;
-      const from = Number.isFinite(startFrac) && startFrac > 0 ? startFrac : 0;
-      // never start too near the end, or the window is empty
-      const maxStart = Math.max(0, dur - Math.max(20, playLen || 20));
-      const target = Math.min(maxStart, dur * from + Math.random() * 30);
-      if (target > 1 && dur) {
-        try { vid.currentTime = target; } catch { /* not seekable yet */ }
+    try {
+      if (!instant) {
+        switching = true;
+        await wipeTo(0, WIPE_MS);      // sweep in, fully covering the frame
       }
-      deadline = playLen > 0 ? Date.now() + playLen * 1000 : 0;
-    };
 
-    if (vid.readyState >= 1) seek();
-    else vid.addEventListener('loadedmetadata', seek, { once: true });
+      pos = ((index % order.length) + order.length) % order.length;
+      const c = order[pos];
 
-    vid.play().catch(() => {
-      // autoplay refused: retry muted once, then give up quietly
-      vid.muted = true;
-      vid.play().catch(() => { msgEl.textContent = 'CLICK TO PLAY'; msgEl.classList.remove('hide'); });
-    });
+      labelGame(c.game);
+      titleEl.textContent = c.title || c.file;
+      idxEl.textContent = `${pos + 1} / ${order.length}`;
+      msgEl.classList.add('hide');
+      progEl.style.width = '0%';
+
+      await loadAndPlay(c, 280);
+      firstClip = false;
+
+      if (!instant) {
+        await wipeTo(100, WIPE_MS);    // sweep off to the right
+        await wipeTo(-100, 0);         // park left again, unseen
+      }
+    } finally {
+      // Always release the guard and always leave the slab off-screen. Without
+      // this, one thrown error would set switching=true forever and the player
+      // would silently stop advancing.
+      switching = false;
+      if (wipeEl && wipeEl.style.transform !== 'translateX(-100%)') {
+        wipeTo(-100, 0);
+      }
+    }
   }
 
   function advance() { play(pos + 1); }
@@ -374,7 +482,7 @@
         return;
       }
       order = shuffle ? shuffleInto(clips) : clips.slice();
-      play(0);
+      play(0, { instant: true });
     } catch (e) {
       msgEl.textContent = 'CLIP API UNREACHABLE';
       msgEl.classList.remove('hide');
