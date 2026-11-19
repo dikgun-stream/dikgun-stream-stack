@@ -318,7 +318,7 @@
       if (!pool.length) { cap.textContent = 'NO CLIPS'; return; }
       const c = pool[idx++ % pool.length];
       cap.textContent = (c.game || '').toUpperCase();
-      v.src = '/videos/' + String(c.rel).split('/').map(encodeURIComponent).join('/');
+      v.src = '/' + (c.mount || 'videos') + '/' + String(c.rel).split('/').map(encodeURIComponent).join('/');
       const seek = () => {
         const dur = Number.isFinite(v.duration) ? v.duration : 0;
         const from = Number(c.start) || dur * 0.12;
@@ -341,3 +341,4 @@
 </script>
 </body>
 </html>
+

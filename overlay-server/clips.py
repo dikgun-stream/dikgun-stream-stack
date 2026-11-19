@@ -63,8 +63,9 @@ _GAME_ALIASES = {
 }
 
 _lock = threading.Lock()
-_cache: list[dict] | None = None
-_cache_at = 0.0
+# keyed by root: a single global cache made a second clip folder return the
+# first folder's listing, because scan() is now called once per mount
+_cache: dict[str, tuple[float, list[dict]]] = {}
 _duration_cache: dict[str, float] = {}
 _duration_loading = False
 CACHE_TTL = 300.0
@@ -145,13 +146,14 @@ def _fill_durations(paths: list[tuple[str, Path]], cache_file: Path) -> None:
 def scan(root: Path, cache_file: Path | None = None) -> list[dict]:
     """Walk the videos tree and return the clip index.
 
-    Cheap enough to call directly, but results are memoised for a few minutes.
+    Cheap enough to call directly, but results are memoised per root for a few
+    minutes -- there is more than one clip folder, so the key must include it.
     """
-    global _cache, _cache_at
-
+    key = str(root)
     with _lock:
-        if _cache is not None and (time.time() - _cache_at) < CACHE_TTL:
-            return _cache
+        hit = _cache.get(key)
+        if hit is not None and (time.time() - hit[0]) < CACHE_TTL:
+            return hit[1]
 
     clips: list[dict] = []
     if root.is_dir():
@@ -194,8 +196,7 @@ def scan(root: Path, cache_file: Path | None = None) -> list[dict]:
                 c["duration"] = d
 
     with _lock:
-        _cache = clips
-        _cache_at = time.time()
+        _cache[key] = (time.time(), clips)
     return clips
 
 

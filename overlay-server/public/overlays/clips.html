@@ -263,8 +263,12 @@
   let deadline = 0;
   let sourceLabel = 'CLIP';
 
-  function encPath(rel) {
-    return '/videos/' + rel.split('/').map(encodeURIComponent).join('/');
+  function encPath(clip) {
+    // each clip folder is mounted separately, so the mount prefix comes from the
+    // API rather than being hardcoded
+    const mount = clip.mount || 'videos';
+    const rel = String(clip.rel || clip);
+    return '/' + mount + '/' + rel.split('/').map(encodeURIComponent).join('/');
   }
 
   function shuffleInto(list) {
@@ -296,7 +300,7 @@
     msgEl.classList.add('hide');
     progEl.style.width = '0%';
 
-    vid.src = encPath(c.rel);
+    vid.src = encPath(c);
 
     const seek = () => {
       // jump into the recording so clips do not always open on a menu screen
@@ -389,3 +393,4 @@
 </script>
 </body>
 </html>
+

@@ -567,10 +567,19 @@ app.mount("/items", StaticFiles(directory=str(_ITEMS_DIR)), name="items")
 # them with HTTP range support, which is what <video> needs to seek.
 import clips as clip_lib  # noqa: E402
 
-CLIPS_ROOT = Path(os.environ.get("DIKGUN_CLIPS", r"C:\Users\JR\Videos"))
+# Several folders hold recordings. Each gets its own mount so a clip's `rel`
+# stays relative to its own root, and the player builds /<mount>/<rel>.
+_CLIP_CANDIDATES = [
+    ("videos", Path(os.environ.get("DIKGUN_CLIPS", r"C:\Users\JR\Videos"))),
+    ("videosq", Path(os.environ.get("DIKGUN_CLIPS_Q", r"Q:\Game Clips"))),
+]
+CLIP_MOUNTS: list[tuple[str, Path]] = []
+for _label, _path in _CLIP_CANDIDATES:
+    if _path.is_dir():
+        app.mount(f"/{_label}", StaticFiles(directory=str(_path)), name=f"mount-{_label}")
+        CLIP_MOUNTS.append((_label, _path))
+CLIPS_ROOT = CLIP_MOUNTS[0][1] if CLIP_MOUNTS else _CLIP_CANDIDATES[0][1]
 CLIPS_CACHE = Path(__file__).with_name("clips_cache.json")
-if CLIPS_ROOT.is_dir():
-    app.mount("/videos", StaticFiles(directory=str(CLIPS_ROOT)), name="videos")
 
 # Shared scene stylesheet/script. The /overlay/{name} route appends ".html", so
 # asset files cannot live under /overlay and need their own mount.
@@ -649,16 +658,33 @@ async def status() -> dict:
     }
 
 
+async def _all_clips() -> list[dict]:
+    """Index every mounted clip folder and tag each clip with its mount."""
+    out: list[dict] = []
+    for label, path in CLIP_MOUNTS:
+        try:
+            found = await asyncio.to_thread(clip_lib.scan, path, CLIPS_CACHE)
+        except Exception:  # noqa: BLE001
+            found = []
+        for c in found:
+            c = dict(c)
+            c["mount"] = label
+            c["rel"] = c["rel"].replace("\\", "/")
+            out.append(c)
+    return out
+
+
 @app.get("/api/clips")
 async def api_clips(game: str | None = None, limit: int = 400) -> dict:
     """Index of local recordings, grouped by the game folder they came from."""
-    items = await asyncio.to_thread(clip_lib.scan, CLIPS_ROOT, CLIPS_CACHE)
+    items = await _all_clips()
     total = len(items)
     if game:
         items = [c for c in items if c["game"].lower() == game.lower()]
     return {
         "root": str(CLIPS_ROOT),
-        "available": CLIPS_ROOT.is_dir(),
+        "mounts": [{"name": l, "path": str(p)} for l, p in CLIP_MOUNTS],
+        "available": bool(CLIP_MOUNTS),
         "total": total,
         "count": len(items),
         "games": clip_lib.games(items),
@@ -679,7 +705,7 @@ async def api_clip_highlights(source: str = "all", limit: int = 400) -> dict:
     own scanner and the player simply shuffles them together.
     """
     want = (source or "all").lower()
-    clips = await asyncio.to_thread(clip_lib.scan, CLIPS_ROOT, CLIPS_CACHE)
+    clips = await _all_clips()
     by_rel = {c["rel"]: c for c in clips}
 
     def load(name: str) -> dict:
@@ -716,6 +742,7 @@ async def api_clip_highlights(source: str = "all", limit: int = 400) -> dict:
                     continue
                 out.append({
                     "rel": rel,
+                    "mount": meta.get("mount", "videos"),
                     "game": meta["game"],
                     "title": meta["title"],
                     "start": round(start, 2),
