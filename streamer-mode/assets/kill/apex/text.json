@@ -1,1 +1,4 @@
-{"text": "ELIMINATED", "note": "Apex announces kills with ELIMINATED <player> text in the centre. Verified at 1:49 in Apex Legends 2023.12.14 - 09.36.33.30.DVR."}
+{
+  "texts": ["ELIMINATED", "KNOCKED DOWN"],
+  "note": "Apex shows ELIMINATED <player> on a kill and a 'You knocked down an enemy' banner on a knock. Both are highlight-worthy; two knocks in one clip is a strong candidate. Verified 1:49 in Apex Legends 2023.12.14 - 09.36.33.30.DVR."
+}

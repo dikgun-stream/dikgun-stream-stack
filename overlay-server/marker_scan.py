@@ -106,8 +106,11 @@ def load(game: str):
     if text_cfg.is_file():
         try:
             _TEXT_CFG = json.loads(text_cfg.read_text(encoding="utf-8"))
-            _TEXT_CFG["_needle"] = str(_TEXT_CFG.get("text", "KILL")).upper()
-            print(f"  marker '{game}' -> OCR, looking for '{_TEXT_CFG['_needle']}'")
+            raw = _TEXT_CFG.get("texts") or _TEXT_CFG.get("text") or "KILL"
+            if isinstance(raw, str):
+                raw = [raw]
+            _TEXT_CFG["_needles"] = [str(x).upper() for x in raw]
+            print(f"  marker '{game}' -> OCR, looking for {_TEXT_CFG['_needles']}")
             return None
         except Exception as exc:  # noqa: BLE001
             raise SystemExit(f"bad text.json for {game}: {exc}")
@@ -176,7 +179,7 @@ def ocr_hit(frame) -> float:
     if not _TEXT_CFG:
         return 0.0
     _tesseract()
-    needle = _TEXT_CFG["_needle"]
+    needles = _TEXT_CFG["_needles"]
     try:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         # several passes: game text varies in size and contrast, and OCR is
@@ -191,8 +194,8 @@ def ocr_hit(frame) -> float:
         ]
         for img, psm in passes:
             txt = pytesseract.image_to_string(
-                Image.fromarray(img), config=f"--psm {psm}").upper()
-            if needle in txt.replace("|", " "):
+                Image.fromarray(img), config=f"--psm {psm}").upper().replace("|", " ")
+            if any(n in txt for n in needles):
                 return 1.0
         return 0.0
     except Exception as exc:  # noqa: BLE001
