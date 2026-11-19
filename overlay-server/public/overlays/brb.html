@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Be Right Back</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Rubik:wght@500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/scene.css">
+<style>
+  /* Inverted composition vs Starting Soon: the ink column runs vertically on
+     the right, the title is set flush-left, and the counter is small -- BRB is
+     passive content, not a focal countdown. */
+
+  body { background: var(--paper); }
+
+  .column {
+    position: absolute; z-index: 3;
+    top: 0; right: 0; bottom: 0;
+    width: 30vmin;
+    background: var(--ink);
+  }
+  .v .column { width: 24vmin; }
+
+  /* rotated mono text INSIDE the ink column -- on paper it was unreadable */
+  .column-text {
+    position: absolute; z-index: 4;
+    right: 0; top: 0; bottom: 0;
+    width: 30vmin;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .v .column-text { right: 0; width: 24vmin; }
+  .column-text span {
+    transform: rotate(-90deg);
+    font-family: var(--mono);
+    font-size: 1.4vmin;
+    letter-spacing: .5em;
+    color: var(--steel);
+    white-space: nowrap;
+  }
+
+  .axis.sweep {
+    top: 22%; height: 26vmin; left: -40%;
+    animation: sweep-x 27s linear infinite;
+    z-index: 2;
+  }
+  .v .axis.sweep { animation: sweep-y 31s linear infinite; }
+
+  #title {
+    position: absolute; z-index: 6;
+    left: var(--u12); top: 30%;
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 17vmin;
+    line-height: .84;
+    letter-spacing: -.02em;
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+  #title .ln { display: block; }
+
+  .rule {
+    position: absolute; z-index: 5;
+    left: var(--u12); top: 26%;
+    width: 34vmin; height: var(--rule-slab);
+    background: var(--red);
+  }
+
+  #elapsedWrap {
+    position: absolute; z-index: 6;
+    left: var(--u12); bottom: 26%;
+  }
+  #elapsedWrap .tag {
+    font-family: var(--mono); font-size: 1.35vmin;
+    letter-spacing: .3em; color: var(--panel);
+  }
+  #elapsed {
+    font-family: var(--display); font-weight: 500;
+    font-size: 9vmin; line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+    margin-top: 4px;
+  }
+
+  .plate-bottom {
+    position: absolute; z-index: 7;
+    left: 0; right: 0; bottom: 0;
+    height: 8.2vmin;
+    display: flex; align-items: center;
+    padding: 0 var(--u12);
+    gap: var(--u6);
+  }
+  .plate-bottom .tag {
+    font-family: var(--mono); font-size: 1.25vmin;
+    letter-spacing: .28em; color: var(--steel); white-space: nowrap;
+  }
+  .plate-bottom .game {
+    font-family: var(--display); font-weight: 500;
+    font-size: 3.4vmin; letter-spacing: .02em;
+    text-transform: uppercase; color: var(--paper-hi);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .plate-bottom .game.is-long { font-size: 2.7vmin; }
+  .plate-bottom .sep { flex: 0 0 var(--rule-thin); height: 55%; background: rgba(255,255,255,.22); }
+  .plate-bottom .grow { flex: 1 1 auto; }
+  .plate-bottom .meta {
+    font-family: var(--mono); font-size: 1.25vmin;
+    letter-spacing: .18em; color: var(--steel); white-space: nowrap;
+  }
+
+  .strip {
+    position: absolute; z-index: 7;
+    left: 0; right: 30vmin; bottom: 8.2vmin;
+    height: 4.6vmin;
+    background: var(--red); color: var(--paper-hi);
+    display: flex; align-items: center; overflow: hidden;
+  }
+  .v .strip { right: 24vmin; }
+  .strip .marquee { width: 100%; }
+  .strip .marquee-track {
+    font-family: var(--display); font-weight: 500;
+    font-size: 2.3vmin; letter-spacing: .16em; text-transform: uppercase;
+  }
+  .strip .dot { color: var(--paper); opacity: .55; }
+
+  /* ---- vertical ---------------------------------------------------------- */
+  .v #title {
+    left: var(--u6); top: 20%;
+    font-size: 21vmin;
+  }
+  .v .rule { left: var(--u6); top: 15%; width: 42vmin; height: var(--rule-slab); }
+  .v #elapsedWrap { left: var(--u6); bottom: auto; top: 62%; }
+  .v #elapsed { font-size: 12vmin; }
+  .v .plate-bottom {
+    height: 9vmin; padding: 0 var(--u6);
+    flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px;
+  }
+  .v .plate-bottom .sep, .v .plate-bottom .grow { display: none; }
+  .v .plate-bottom .game { font-size: 3.6vmin; }
+  .v .strip { bottom: 9vmin; height: 5vmin; }
+  .v .strip .marquee-track { font-size: 2.8vmin; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="halftone"></div>
+  <div class="axis band-red sweep"></div>
+  <div class="column"></div>
+  <div class="column-text"><span>STAND BY / DO NOT ADJUST YOUR SET</span></div>
+
+  <div class="rule"></div>
+  <div id="title"><span class="ln">Be Right</span><span class="ln">Back</span></div>
+
+  <div id="elapsedWrap">
+    <span class="tag">AWAY FOR</span>
+    <div id="elapsed">00:00</div>
+  </div>
+
+  <div class="strip">
+    <div class="marquee">
+      <div class="marquee-track" data-speed="56">
+        <span>TWITCH.TV/DIKGUN</span><span class="dot">/</span>
+        <span>BACK IN A MINUTE</span><span class="dot">/</span>
+        <span>CHAT IS STILL OPEN</span><span class="dot">/</span>
+        <span>SCHEDULE &amp; CLIPS IN THE PANELS BELOW</span><span class="dot">/</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="plate-bottom plate chamfer">
+    <span class="tag">NOW PLAYING</span>
+    <span class="sep"></span>
+    <span class="game" data-game data-game-wrap>CATEGORY PENDING</span>
+    <span class="grow"></span>
+    <span class="meta" data-stamp>-</span>
+  </div>
+
+  <div class="vignette"></div>
+  <div class="grain"></div>
+</div>
+
+<script src="/assets/scene.js"></script>
+<script>
+  // elapsed counter, not a countdown: we do not promise a return time
+  const started = Date.now();
+  const el = document.getElementById('elapsed');
+  const pad = (n) => String(n).padStart(2, '0');
+  setInterval(() => {
+    const s = Math.floor((Date.now() - started) / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    el.textContent = h > 0 ? `${h}:${pad(m)}:${pad(s % 60)}` : `${pad(m)}:${pad(s % 60)}`;
+  }, 500);
+
+  document.addEventListener('scene:event', (e) => {
+    if (e.detail && e.detail.type) document.body.dataset.lastEvent = e.detail.type;
+  });
+</script>
+</body>
+</html>

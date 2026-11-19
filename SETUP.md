@@ -136,3 +136,79 @@ curl -X POST http://127.0.0.1:7475/api/live -H "Content-Type: application/json" 
 
 The dry run should report `verticalHotkeyAvailable: true` and a two-line plan:
 OBS native stream (Twitch) and the vertical hotkey (YouTube).
+
+## Scenes
+
+Six scenes carry the waiting / away / outro content, one of each per canvas:
+
+| Horizontal | Vertical | Page |
+|---|---|---|
+| `SHOW_StartingSoon` | `V_SHOW_StartingSoon` | `/overlay/starting-soon` |
+| `SHOW_BRB` | `V_SHOW_BRB` | `/overlay/brb` |
+| `SHOW_Ending` | `V_SHOW_Ending` | `/overlay/ending` |
+
+Vertical sources append `?v=1` to the same URL. That is not a scaled copy: the
+composition inverts, the timer moves into the upper third for thumb-safety, and
+the diagonal steepens from 30 degrees to 60.
+
+### Wiring on a new machine
+
+For each row above:
+
+1. Add a **Browser** source to the scene.
+2. Set width/height to the canvas size (1920x1080 horizontal, 1080x1920 vertical).
+3. Paste the URL. For the vertical copies add `&cb=1` after `?v=1`.
+4. Enable **Shutdown source when not visible** — a looping scene costs a Chromium
+   instance while hidden otherwise.
+5. Leave **Control audio via OBS** off; there is no audio in these pages.
+
+The scenes pick up the current category automatically. Set it on the dashboard
+and every open scene updates over WebSocket within a second.
+
+### Refresh after an edit
+
+OBS caches browser-source pages. After changing anything under
+`overlay-server/public/`:
+
+```powershell
+pwsh -File obs-build\refresh-scene-sources.ps1
+```
+
+That appends a cache-busting timestamp to every scene source URL. Restarting OBS
+alone will NOT show your change.
+
+### Design notes
+
+Palette, geometry and type live in `overlay-server/public/assets/scene.css` and
+are shared by all three pages. The aesthetic is constructivist, deliberately
+without any political symbols or slogans.
+
+Rules worth keeping if you edit:
+
+- one diagonal axis plus its perpendicular, never two competing diagonals
+- red is reserved for the single most important element on the frame
+- chamfered corners only, zero border radius
+- no gradients, no drop shadows, no glass/blur fills
+- animate `transform` and `opacity` only, with loop periods of 18 seconds or more
+  so a ten-minute wait does not read as a gif
+
+### Gameplay-driven content (placeholder)
+
+`public/assets/scene.js` re-dispatches server events as a DOM event, so a kill or
+assist can drive an animation later without touching the scene markup:
+
+```js
+document.addEventListener('scene:event', (e) => {
+  if (e.detail.type === 'kill') { /* animate */ }
+});
+```
+
+Fire one from anywhere:
+
+```powershell
+Invoke-RestMethod -Uri http://127.0.0.1:7475/api/event -Method Post `
+  -ContentType 'application/json' -Body '{"type":"kill","channel":"scenes"}'
+```
+
+This is intentionally inert for now: the in-game scenes stay uncluttered, and
+only the waiting/BRB/ending scenes listen.

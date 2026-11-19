@@ -120,6 +120,8 @@ function connect() {
     let m; try { m = JSON.parse(e.data); } catch { return; }
     if (m.kind === 'config' && m.config && m.config.chat) {
       settings = { ...settings, ...m.config.chat };
+    } else if (m.kind === 'clear') {
+      wrap.innerHTML = '';          // wipe stale messages without reloading OBS
     } else if (m.kind === 'event') {
       addMessage(m);
     }

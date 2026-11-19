@@ -43,30 +43,45 @@ if (-not $modsOnDisk) {
     Say 'WARNING: mod search paths missing - the manager needs to re-apply them'
 }
 
-# --- 2. make sure the manager is up so it re-applies state
-$dmmProc = Get-Process -Name 'deadlock-mod-manager' -ErrorAction SilentlyContinue
-if (-not $dmmProc) {
+# --- 2. preconditions, logged before anything is launched
+# A running manager may have no window (tray/minimised), and Get-Process returns
+# an ARRAY, so comparing .MainWindowHandle directly silently misbehaves. Resolve
+# to a single windowed process first.
+function Get-DmmWindow {
+    Get-Process -Name 'deadlock-mod-manager' -ErrorAction SilentlyContinue |
+        Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
+        Select-Object -First 1
+}
+
+$dmmProcs = @(Get-Process -Name 'deadlock-mod-manager' -ErrorAction SilentlyContinue)
+$dmmWin = Get-DmmWindow
+Say ("preconditions: DMM processes={0}, with window={1}, game running=False" -f `
+    $dmmProcs.Count, (@($dmmWin).Count))
+
+if ($dmmProcs.Count -gt 0) {
+    # Already open: reuse it. It re-asserts the mod state at startup, which has
+    # already happened, so we do not need to wait for a window or relaunch.
+    Say 'manager already running - reusing it'
+} else {
     if ($DryRun) {
         Say 'DRY   would start Deadlock Mod Manager'
     } elseif (Test-Path $DMM) {
         Start-Process -FilePath $DMM
         Say 'started Deadlock Mod Manager'
-        $deadline = (Get-Date).AddSeconds(15)
+        $deadline = (Get-Date).AddSeconds(20)
         do {
-            Start-Sleep -Milliseconds 250
-            $dmmProc = Get-Process -Name 'deadlock-mod-manager' -ErrorAction SilentlyContinue
-        } while ((-not $dmmProc -or $dmmProc.MainWindowHandle -eq [IntPtr]::Zero) -and (Get-Date) -lt $deadline)
-        if ($dmmProc -and $dmmProc.MainWindowHandle -ne [IntPtr]::Zero) {
-            Say 'manager window is up'
+            Start-Sleep -Milliseconds 300
+            $dmmWin = Get-DmmWindow
+        } while (-not $dmmWin -and (Get-Date) -lt $deadline)
+        if ($dmmWin) {
+            Say "manager window is up (pid $($dmmWin.Id))"
             Start-Sleep -Seconds 2      # let Auto-Reapply Mods finish writing
         } else {
-            Say 'WARNING: manager window did not appear in time'
+            Say 'WARNING: manager window did not appear within 20s - continuing anyway'
         }
     } else {
         Say "WARNING: manager exe not found at $DMM"
     }
-} else {
-    Say 'manager already running'
 }
 
 # --- 3. fire the URI

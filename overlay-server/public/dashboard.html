@@ -186,12 +186,14 @@
           <div class="row"><div style="flex:1"><label>Title</label>
             <input id="siTitle" placeholder="stream title"></div></div>
           <div class="row"><div style="flex:1"><label>Game / category</label>
-            <input id="siGame" placeholder="e.g. Escape From Tarkov"></div></div>
+            <input id="siGame" placeholder="type to search Twitch categories…" autocomplete="off"></div></div>
+          <div id="catResults" style="margin:-4px 0 8px"></div>
           <div class="row">
             <button class="primary" id="siSave">Update both platforms</button>
             <span class="hint" id="siStatus" style="align-self:center"></span>
           </div>
-          <div class="hint">Routed through Streamer.bot so one click hits Twitch and YouTube.</div>
+          <div class="hint" id="catPicked" style="margin-top:6px"></div>
+          <div class="hint">Pick from the list — the category must match Twitch's own name exactly, or you land in no bucket at all. Routed through Streamer.bot so one click hits Twitch and YouTube.</div>
         </div>
 
         <div class="panel">
@@ -305,6 +307,11 @@ const OVERLAYS = [
   {name:'chat',          label:'Chat'},
   {name:'goals',         label:'Goals'},
   {name:'starting-soon', label:'Starting Soon'},
+  {name:'topic',         label:'Topic card'},
+  {name:'input?game=tarkov',   label:'Input — Tarkov'},
+  {name:'input?game=deadlock', label:'Input — Deadlock'},
+  {name:'input?game=apex',     label:'Input — Apex'},
+  {name:'input?game=generic',  label:'Input — Generic'},
 ];
 
 // ---------------------------------------------------------------- utilities
@@ -571,13 +578,79 @@ async function loadAudio() {
   } catch (e) { box.innerHTML = `<div class="hint">${e.message}</div>`; }
 }
 
+// ------------------------------------------------- category picker
+let catTimer = null;
+let pickedGame = null;      // the Twitch result the user clicked, if any
+
+function renderCats(results) {
+  const box = $('catResults');
+  box.innerHTML = '';
+  if (!results.length) {
+    box.innerHTML = '<div class="hint" style="padding:2px 0">no match — you can still type it by hand</div>';
+    return;
+  }
+  for (const r of results) {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:6px;border-radius:8px;cursor:pointer';
+    row.onmouseenter = () => { row.style.background = 'rgba(255,255,255,.05)'; };
+    row.onmouseleave = () => { row.style.background = 'transparent'; };
+    if (r.boxArt) {
+      const img = document.createElement('img');
+      img.src = r.boxArt;
+      img.style.cssText = 'width:34px;height:46px;object-fit:cover;border-radius:4px;flex:0 0 auto';
+      img.onerror = () => { img.style.visibility = 'hidden'; };
+      row.appendChild(img);
+    }
+    const txt = document.createElement('div');
+    const name = document.createElement('div');
+    name.textContent = r.display;
+    name.style.fontSize = '13px';
+    const meta = document.createElement('div');
+    meta.className = 'hint';
+    meta.style.fontSize = '11px';
+    meta.textContent = `Twitch id ${r.id}`;
+    txt.append(name, meta);
+    row.appendChild(txt);
+    row.onclick = () => {
+      pickedGame = r;
+      $('siGame').value = r.display;
+      $('catPicked').textContent = `picked "${r.display}" — Twitch id ${r.id}`;
+      $('catResults').innerHTML = '';
+    };
+    box.appendChild(row);
+  }
+}
+
+$('siGame').addEventListener('input', () => {
+  pickedGame = null;
+  $('catPicked').textContent = '';
+  const q = $('siGame').value.trim();
+  clearTimeout(catTimer);
+  if (q.length < 2) { $('catResults').innerHTML = ''; return; }
+  catTimer = setTimeout(async () => {
+    try {
+      const d = await api(`/api/twitch/categories?q=${encodeURIComponent(q)}`);
+      renderCats(d.results || []);
+    } catch (e) {
+      $('catResults').innerHTML = `<div class="hint">search failed: ${e.message}</div>`;
+    }
+  }, 250);
+});
+
 $('siSave').onclick = async () => {
   $('siStatus').textContent = 'sending…';
+  // Prefer the exact Twitch name from the picked result; otherwise send what was typed.
+  const game = pickedGame ? pickedGame.name : $('siGame').value;
   try {
     const r = await api('/api/stream/info', {method:'POST',
-      body: JSON.stringify({title: $('siTitle').value, game: $('siGame').value})});
-    if (r.ok) { $('siStatus').textContent = 'updated'; log('stream info updated', 'ok'); }
-    else { $('siStatus').textContent = 'not sent'; log(`✗ ${r.hint || 'failed'}`, 'err'); }
+      body: JSON.stringify({title: $('siTitle').value, game})});
+    if (r.ok) {
+      $('siStatus').textContent = 'updated';
+      log(`stream info updated: "${r.title}" / ${r.game}`, 'ok');
+    } else {
+      $('siStatus').textContent = 'not sent';
+      log(`✗ ${r.hint || 'failed'}`, 'err');
+    }
   } catch (e) { $('siStatus').textContent = 'error'; log(`✗ ${e.message}`, 'err'); }
 };
 

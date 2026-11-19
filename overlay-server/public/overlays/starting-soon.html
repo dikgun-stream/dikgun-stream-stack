@@ -3,112 +3,253 @@
 <head>
 <meta charset="utf-8" />
 <title>Starting Soon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Rubik:wght@500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/scene.css">
 <style>
-  html, body {
-    margin: 0; height: 100%; width: 100%; background: transparent; overflow: hidden;
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* ---- composition -------------------------------------------------------
+     Horizontal: type column left, oversized numeral right, rules run L->R.
+     Vertical  : inverted -- type stacked, numeral in the upper third
+                 (thumb-safe), steeper axis, bottom reserved for platform UI. */
+
+  .axis.sweep {
+    top: 54%; height: 46vmin;
+    animation: sweep-x 19s linear infinite;
+    z-index: 2;
   }
-  #stage {
-    position: fixed; inset: 0;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 10px;
+  .v .axis.sweep {
+    top: 38%; height: 30vmin;
+    animation: sweep-y 24s linear infinite;
   }
-  .card {
-    text-align: center;
-    padding: 34px 64px 40px;
-    border-radius: 24px;
-    background: rgba(10,13,18,.82);
-    border: 1px solid rgba(255,255,255,.09);
-    box-shadow: 0 24px 70px rgba(0,0,0,.65);
-    backdrop-filter: blur(6px);
-    min-width: 620px;
+
+  .slab {
+    position: absolute; z-index: 3;
+    background: var(--ink);
   }
-  .headline {
-    font-size: 22px; font-weight: 800; letter-spacing: 6px; text-transform: uppercase;
-    color: #4ade80; margin-bottom: 6px;
+  .slab-tl { top: 0; left: 0; width: 128px; height: 34vmin; }
+  .v .slab-tl { width: 84px; height: 26vmin; }
+
+  /* red register mark -- the single red element on this frame */
+  .mark {
+    position: absolute; z-index: 5;
+    width: 26vmin; height: 26vmin;
+    background: var(--red);
+    clip-path: polygon(0 0, 100% 0, 0 100%);
   }
-  .clock {
-    font-size: 108px; font-weight: 900; letter-spacing: -3px; line-height: 1.05;
-    color: #f7fbff; font-variant-numeric: tabular-nums;
-    text-shadow: 0 6px 30px rgba(0,0,0,.8);
+
+  #headline {
+    position: absolute; z-index: 6;
+    left: calc(var(--u12) + 40px);
+    top: 21%;
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 15.5vmin;
+    line-height: .84;
+    letter-spacing: -.02em;
+    text-transform: uppercase;
+    color: var(--ink);
   }
-  .subline { font-size: 20px; color: #a9bcd0; margin-top: 6px; }
-  .bar { margin: 22px auto 0; width: 460px; height: 6px; border-radius: 999px;
-         background: rgba(255,255,255,.1); overflow: hidden; }
-  .bar > i { display: block; height: 100%; width: 100%;
-             background: linear-gradient(90deg,#4ade80,#a7f3d0); transform-origin: left center; }
+  #headline .ln { display: block; }
+  #headline .ln:last-child { padding-left: .06em; }
+
+  #subline {
+    position: absolute; z-index: 6;
+    left: calc(var(--u12) + 44px);
+    top: 62%;
+    font-family: var(--mono);
+    font-size: 1.9vmin;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: var(--panel);
+    border-left: var(--rule-mid) solid var(--red);
+    padding-left: 14px;
+  }
+
+  /* countdown ------------------------------------------------------------- */
+  #timerWrap {
+    position: absolute; z-index: 6;
+    right: 5.5vw; bottom: 24%;
+    text-align: right;
+  }
+  #timerLabel {
+    display: block;
+    font-family: var(--mono);
+    font-size: 1.5vmin;
+    letter-spacing: .3em;
+    color: var(--panel);
+    margin-bottom: 6px;
+  }
+  #timer {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 30vmin;
+    line-height: .78;
+    letter-spacing: -.03em;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+  #barTrack {
+    margin-top: 14px; margin-left: auto;
+    width: 34vmin; height: var(--rule-mid);
+    background: rgba(22,20,18,.14);
+    overflow: hidden;
+  }
+  #bar { height: 100%; background: var(--red); transform-origin: left center; transform: scaleX(1); }
+
+  /* bottom plate ---------------------------------------------------------- */
+  .plate-bottom {
+    position: absolute; z-index: 7;
+    left: 0; right: 0; bottom: 0;
+    height: 8.2vmin;
+    display: flex; align-items: center;
+    padding: 0 var(--u12);
+    gap: var(--u6);
+  }
+  .plate-bottom .tag {
+    font-family: var(--mono); font-size: 1.25vmin;
+    letter-spacing: .28em; color: var(--steel);
+    white-space: nowrap;
+  }
+  .plate-bottom .game {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 3.4vmin;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+    color: var(--paper-hi);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .plate-bottom .game.is-long { font-size: 2.7vmin; }
+  .plate-bottom .sep { flex: 0 0 var(--rule-thin); height: 55%; background: rgba(255,255,255,.22); }
+  .plate-bottom .grow { flex: 1 1 auto; }
+  .plate-bottom .meta {
+    font-family: var(--mono); font-size: 1.25vmin;
+    letter-spacing: .18em; color: var(--steel); white-space: nowrap;
+  }
+
+  /* marquee --------------------------------------------------------------- */
+  .strip {
+    position: absolute; z-index: 7;
+    left: 0; right: 0; bottom: 8.2vmin;
+    height: 4.6vmin;
+    background: var(--red);
+    color: var(--paper-hi);
+    display: flex; align-items: center;
+    overflow: hidden;
+  }
+  .strip .marquee { width: 100%; }
+  .strip .marquee-track {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 2.3vmin;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+  }
+  .strip .dot { color: var(--paper); opacity: .55; }
+
+  /* ---- vertical overrides ------------------------------------------------ */
+  .v #headline {
+    left: calc(var(--u6) + 12px);
+    top: 11%;
+    /* 20vmin overflowed 1080px at "STARTING"; 17vmin clears the right edge */
+    font-size: 16.6vmin;
+    line-height: .86;
+  }
+  .v #subline {
+    left: calc(var(--u6) + 16px);
+    top: 34%;
+    font-size: 2.6vmin;
+    /* flat paper block so the mono text survives crossing the red band */
+    background: var(--paper);
+    padding: 6px 12px 6px 14px;
+  }
+  .v #timerWrap {
+    left: 0; right: 0;
+    bottom: auto; top: 54%;
+    padding: 0 var(--u6);
+    text-align: left;
+  }
+  .v #timer { font-size: 34vmin; }
+  .v #barTrack { margin-left: 0; width: 60vmin; }
+  .v .mark { width: 30vmin; height: 30vmin; top: 4%; right: 0; left: auto; }
+  .v .plate-bottom {
+    height: 9vmin; padding: 0 var(--u6);
+    flex-direction: column; align-items: flex-start; justify-content: center;
+    gap: 2px;
+  }
+  .v .plate-bottom .sep, .v .plate-bottom .grow { display: none; }
+  .v .plate-bottom .game { font-size: 3.6vmin; }
+  .v .strip { bottom: 9vmin; height: 5vmin; }
+  .v .strip .marquee-track { font-size: 2.8vmin; }
 </style>
 </head>
 <body>
 <div id="stage">
-  <div class="card">
-    <div class="headline" id="headline">Starting Soon</div>
-    <div class="clock" id="clock">05:00</div>
-    <div class="subline" id="subline">Grab a drink.</div>
-    <div class="bar"><i id="bar"></i></div>
+  <div class="halftone"></div>
+  <div class="slab slab-tl"></div>
+  <div class="mark"></div>
+  <div class="axis band-red sweep"></div>
+
+  <div id="headline"><span class="ln">Starting</span><span class="ln">Soon</span></div>
+  <div id="subline" data-subline>Grab a drink.</div>
+
+  <div id="timerWrap">
+    <span id="timerLabel">CONNECT IN</span>
+    <div id="timer">05:00</div>
+    <div id="barTrack"><div id="bar"></div></div>
   </div>
+
+  <div class="strip">
+    <div class="marquee">
+      <div class="marquee-track" data-speed="48">
+        <span>TWITCH.TV/DIKGUN</span><span class="dot">/</span>
+        <span>DEADLOCK &amp; TARKOV</span><span class="dot">/</span>
+        <span>FOLLOW TO CATCH THE NEXT ONE</span><span class="dot">/</span>
+        <span data-goal-wrap>GOAL <b data-goal-followers>591 / 1,000</b></span><span class="dot">/</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="plate-bottom plate chamfer">
+    <span class="tag">NOW PLAYING</span>
+    <span class="sep"></span>
+    <span class="game" data-game data-game-wrap>CATEGORY PENDING</span>
+    <span class="grow"></span>
+    <span class="meta" data-stamp>-</span>
+  </div>
+
+  <div class="vignette"></div>
+  <div class="grain"></div>
 </div>
+
+<script src="/assets/scene.js"></script>
 <script>
-const params  = new URLSearchParams(location.search);
-const channel = params.get('ch') || 'starting-soon';
+  const timerEl = document.getElementById('timer');
+  const barEl   = document.getElementById('bar');
+  const cd = Scene.makeCountdown(timerEl, barEl);
+  let started = false;
 
-let minutes  = Number(params.get('minutes')) || 5;
-let headline = params.get('headline') || 'Starting Soon';
-let subline  = params.get('subline')  || 'Grab a drink.';
+  function begin(minutes) {
+    cd.start(minutes);
+    started = true;
+  }
+  begin(Scene.state.minutes || 5);
 
-let endsAt = 0, total = 0, timer = null;
-
-const clockEl = document.getElementById('clock');
-const barEl   = document.getElementById('bar');
-const headEl  = document.getElementById('headline');
-const subEl   = document.getElementById('subline');
-
-function applyLabels() {
-  headEl.textContent = headline;
-  subEl.textContent  = subline;
-}
-
-function start(mins) {
-  minutes = Math.max(1, Number(mins) || 5);
-  total = minutes * 60 * 1000;
-  endsAt = Date.now() + total;
-  applyLabels();
-  tick();
-  if (timer) clearInterval(timer);
-  timer = setInterval(tick, 250);
-}
-
-function tick() {
-  const left = Math.max(0, endsAt - Date.now());
-  const s = Math.floor(left / 1000);
-  const mm = String(Math.floor(s / 60)).padStart(2, '0');
-  const ss = String(s % 60).padStart(2, '0');
-  clockEl.textContent = `${mm}:${ss}`;
-  barEl.style.transform = `scaleX(${total ? (left / total) : 1})`;
-  if (left <= 0 && timer) { clearInterval(timer); timer = null; }
-}
-
-function connect() {
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const ws = new WebSocket(`${proto}://${location.host}/ws?role=overlay&ch=${encodeURIComponent(channel)}`);
-  ws.onmessage = (e) => {
-    let m; try { m = JSON.parse(e.data); } catch { return; }
-    if (m.kind === 'config' && m.config && m.config.starting_soon) {
-      const cfg = m.config.starting_soon;
-      headline = cfg.headline || headline;
-      subline  = cfg.subline  || subline;
-      if (total === 0) start(cfg.minutes);
-      else applyLabels();
-    } else if (m.kind === 'event') {
-      // {type:'timer', amount:<minutes>} restarts the countdown
-      if (m.type === 'timer' || m.type === 'test') start(m.amount || minutes);
+  document.addEventListener('scene:config', (e) => {
+    const mins = e.detail && e.detail.starting_soon && e.detail.starting_soon.minutes;
+    if (Number.isFinite(Number(mins)) && (!started || cd.remaining() < 1000)) {
+      begin(mins);
     }
-  };
-  ws.onclose = () => setTimeout(connect, 1200);
-  ws.onerror = () => ws.close();
-}
-connect();
-start(minutes);
+  });
+
+  // Placeholder: gameplay-driven content can fling an event here (kill / assist
+  // circle). Left intentionally inert so the scene adds no clutter today.
+  document.addEventListener('scene:event', (e) => {
+    const type = e.detail && e.detail.type;
+    if (!type) return;
+    document.body.dataset.lastEvent = type;
+  });
 </script>
 </body>
 </html>

@@ -1,6 +1,7 @@
 # Deck button helper. One entry point so each .bat is a one-liner.
 param(
-    [Parameter(Mandatory)][ValidateSet('golive', 'stop', 'panic', 'mic', 'hint', 'dashboard', 'chat')]
+    [Parameter(Mandatory)][ValidateSet('golive', 'stop', 'panic', 'mic', 'hint', 'dashboard', 'chat',
+                                      'kill', 'assist', 'damage', 'dlreset')]
     [string]$Action
 )
 
@@ -30,6 +31,13 @@ try {
 
         'dashboard' { }
         'chat'      { }
+
+        # Deadlock panel counters -- manual on purpose: the game exposes no
+        # passive feed for kills/assists/damage, so the streamer taps these.
+        'kill'   { Post '/api/deadlock/increment' '{"field":"kills","by":1}' }
+        'assist' { Post '/api/deadlock/increment' '{"field":"assists","by":1}' }
+        'damage' { Post '/api/deadlock/increment' '{"field":"damage","by":500}' }
+        'dlreset' { Post '/api/deadlock/reset' }
     }
 } catch {
     # A dead server must not leave a console window hanging around.

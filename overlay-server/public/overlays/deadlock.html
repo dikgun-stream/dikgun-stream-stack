@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Deadlock Panel</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; height: 100%; width: 100%; background: transparent; overflow: hidden;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-user-select: none; user-select: none;
+  }
+
+  /* Bottom-anchored: the item tower growing taller pushes the stat rows up
+     rather than overflowing downward. */
+  #panel {
+    position: fixed;
+    right: var(--right, 26px);
+    left: var(--left, auto);
+    bottom: var(--bottom, 210px);
+    width: var(--width, 150px);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 8px;
+    border-radius: 13px;
+    background: rgba(9, 13, 19, .55);
+    border: 1px solid rgba(255, 255, 255, .13);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .45);
+    backdrop-filter: blur(6px);
+    opacity: 0;
+    transition: opacity .3s ease;
+  }
+  #panel.show { opacity: 1; }
+
+  .row { display: flex; gap: 5px; }
+
+  .chip {
+    flex: 1; min-width: 0;
+    background: rgba(255, 255, 255, .055);
+    border: 1px solid rgba(255, 255, 255, .09);
+    border-radius: 8px;
+    padding: 2px 2px 3px;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .chip .k {
+    font-size: 8.5px; font-weight: 700; letter-spacing: 1px;
+    color: #8ea3ba; text-transform: uppercase; line-height: 1.5;
+  }
+  .chip .v {
+    font-size: 16px; font-weight: 800; color: #f4f9ff;
+    line-height: 1.1; font-variant-numeric: tabular-nums;
+  }
+  .chip.kill  { border-color: rgba(248, 113, 113, .45); }
+  .chip.kill  .k { color: #f87171; }
+  .chip.death { border-color: rgba(203, 213, 225, .40); }
+  .chip.death .k { color: #cbd5e1; }
+  .chip.assist{ border-color: rgba(251, 191, 36, .45); }
+  .chip.assist .k { color: #fbbf24; }
+  .chip.win   { border-color: rgba(74, 222, 128, .55); }
+  .chip.win   .k { color: #4ade80; }
+  .chip.loss  { border-color: rgba(248, 113, 113, .55); }
+  .chip.loss  .k { color: #f87171; }
+
+  /* rows are built in JS: chunks of two, rendered bottom-up */
+  .tower { display: flex; flex-direction: column; gap: 5px; width: fit-content; }
+  .trow { display: flex; gap: 5px; }
+
+  .item {
+    width: 42px; height: 42px;
+    flex: 0 0 auto;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, .07);
+    border: 1px solid rgba(255, 255, 255, .16);
+    overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    aspect-ratio: 1 / 1;
+    animation: pop .22s ease-out;
+  }
+  @keyframes pop { from { transform: scale(.72); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .item img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .item .abbr { font-size: 11px; font-weight: 800; color: #dbe7f3; }
+</style>
+</head>
+<body>
+<div id="panel">
+  <div class="row">
+    <div class="chip kill"><span class="k">K</span><span class="v" id="kills">0</span></div>
+    <div class="chip death"><span class="k">D</span><span class="v" id="deaths">0</span></div>
+    <div class="chip assist"><span class="k">A</span><span class="v" id="assists">0</span></div>
+  </div>
+  <div class="row">
+    <div class="chip win"><span class="k">W</span><span class="v" id="wins">0</span></div>
+    <div class="chip loss"><span class="k">L</span><span class="v" id="losses">0</span></div>
+  </div>
+  <div class="tower" id="tower"></div>
+</div>
+<script>
+const params = new URLSearchParams(location.search);
+for (const key of ['right', 'left', 'bottom', 'width']) {
+  const v = params.get(key);
+  if (v !== null && Number.isFinite(Number(v))) {
+    document.documentElement.style.setProperty(`--${key}`, `${Number(v)}px`);
+  }
+}
+// anchoring from the left is used on the vertical canvas, where the minimap
+// owns the right-hand side
+if (params.get('left') !== null) {
+  document.documentElement.style.setProperty('--right', 'auto');
+}
+const showItems = params.get('items') !== '0';
+if (!showItems) {
+  const t = document.getElementById('tower');
+  if (t) t.style.display = 'none';
+}
+
+const panel = document.getElementById('panel');
+const el = {
+  kills: document.getElementById('kills'),
+  deaths: document.getElementById('deaths'),
+  assists: document.getElementById('assists'),
+  wins: document.getElementById('wins'),
+  losses: document.getElementById('losses'),
+  tower: document.getElementById('tower'),
+};
+
+const fmt = (n) => Number(n || 0).toLocaleString('en-US');
+function abbr(name) {
+  return (name || '?').split(/[\s\-_]+/).filter(Boolean).slice(0, 2)
+    .map(w => w[0].toUpperCase()).join('');
+}
+
+let rendered = '';
+function render(state) {
+  if (!state) return;
+  el.kills.textContent = fmt(state.kills);
+  el.deaths.textContent = fmt(state.deaths);
+  el.assists.textContent = fmt(state.assists);
+  el.wins.textContent = fmt(state.wins);
+  el.losses.textContent = fmt(state.losses);
+
+  const items = Array.isArray(state.items) ? state.items : [];
+  const signature = items.map(i => `${i.name}|${i.icon || ''}`).join('~');
+  if (signature !== rendered) {
+    rendered = signature;
+    el.tower.innerHTML = '';
+    if (items.length) {
+      // chunk into pairs, render reversed so the FIRST purchase sits at the base
+      const rows = [];
+      for (let i = 0; i < items.length; i += 2) rows.push(items.slice(i, i + 2));
+      rows.reverse();
+      for (const row of rows) {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'trow';
+        for (const it of row) {
+          const box = document.createElement('div');
+          box.className = 'item';
+          box.title = it.name || '';
+          if (it.icon) {
+            const img = document.createElement('img');
+            img.src = it.icon;
+            img.alt = it.name || '';
+            img.onerror = () => {
+              box.textContent = '';
+              const a = document.createElement('span');
+              a.className = 'abbr';
+              a.textContent = abbr(it.name);
+              box.appendChild(a);
+            };
+            box.appendChild(img);
+          } else {
+            const a = document.createElement('span');
+            a.className = 'abbr';
+            a.textContent = abbr(it.name);
+            box.appendChild(a);
+          }
+          rowEl.appendChild(box);
+        }
+        el.tower.appendChild(rowEl);
+      }
+    }
+  }
+  panel.classList.add('show');
+}
+
+fetch('/api/deadlock/state').then(r => r.json()).then(d => render(d.state)).catch(() => {});
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws?role=overlay&ch=deadlock`);
+  ws.onmessage = (e) => {
+    let m; try { m = JSON.parse(e.data); } catch { return; }
+    if (m.kind === 'deadlock' && m.state) render(m.state);
+    else if (m.kind === 'config' && m.config && m.config.deadlock) render(m.config.deadlock);
+    else if (m.kind === 'clear') {
+      render({ kills: 0, deaths: 0, assists: 0, wins: 0, losses: 0, items: [] });
+    }
+  };
+  ws.onclose = () => setTimeout(connect, 1200);
+  ws.onerror = () => ws.close();
+}
+connect();
+</script>
+</body>
+</html>

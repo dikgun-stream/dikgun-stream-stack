@@ -1,0 +1,926 @@
+[
+ {
+  "name": "Extended Magazine",
+  "file": "Extended_Magazine.png"
+ },
+ {
+  "name": "Monster Rounds",
+  "file": "Monster_Rounds.png"
+ },
+ {
+  "name": "Ammo Scavenger",
+  "file": "Ammo_Scavenger.png"
+ },
+ {
+  "name": "upgrade_clip_size_fixed",
+  "file": "upgrade_clip_size_fixed.png"
+ },
+ {
+  "name": "Tesla Bullets",
+  "file": "Tesla_Bullets.png"
+ },
+ {
+  "name": "Capacitor",
+  "file": "Capacitor.png"
+ },
+ {
+  "name": "upgrade_galvanic_storm",
+  "file": "upgrade_galvanic_storm.png"
+ },
+ {
+  "name": "Hollow Point",
+  "file": "Hollow_Point.png"
+ },
+ {
+  "name": "Opening Rounds",
+  "file": "Opening_Rounds.png"
+ },
+ {
+  "name": "upgrade_stabilizer",
+  "file": "upgrade_stabilizer.png"
+ },
+ {
+  "name": "High-Velocity Rounds",
+  "file": "High-Velocity_Rounds.png"
+ },
+ {
+  "name": "Melee Lifesteal",
+  "file": "Melee_Lifesteal.png"
+ },
+ {
+  "name": "Rebuttal",
+  "file": "Rebuttal.png"
+ },
+ {
+  "name": "Counterspell",
+  "file": "Counterspell.png"
+ },
+ {
+  "name": "Weighted Shots",
+  "file": "Weighted_Shots.png"
+ },
+ {
+  "name": "Ancient Shield",
+  "file": "Ancient_Shield.png"
+ },
+ {
+  "name": "Close Quarters",
+  "file": "Close_Quarters.png"
+ },
+ {
+  "name": "Long Range",
+  "file": "Long_Range.png"
+ },
+ {
+  "name": "Slowing Bullets",
+  "file": "Slowing_Bullets.png"
+ },
+ {
+  "name": "Inhibitor",
+  "file": "Inhibitor.png"
+ },
+ {
+  "name": "upgrade_small_attack_speed",
+  "file": "upgrade_small_attack_speed.png"
+ },
+ {
+  "name": "Spirit Shredder",
+  "file": "Spirit_Shredder.png"
+ },
+ {
+  "name": "upgrade_attack_speed_1",
+  "file": "upgrade_attack_speed_1.png"
+ },
+ {
+  "name": "upgrade_nearby_enemy_boost",
+  "file": "upgrade_nearby_enemy_boost.png"
+ },
+ {
+  "name": "Heroic Aura",
+  "file": "Heroic_Aura.png"
+ },
+ {
+  "name": "upgrade_weapon_detention_ammo",
+  "file": "upgrade_weapon_detention_ammo.png"
+ },
+ {
+  "name": "Silence Wave",
+  "file": "Silence_Wave.png"
+ },
+ {
+  "name": "Haunting Scream",
+  "file": "Haunting_Scream.png"
+ },
+ {
+  "name": "Silencer",
+  "file": "Silencer.png"
+ },
+ {
+  "name": "Silencer",
+  "file": "Silencer.png"
+ },
+ {
+  "name": "upgrade_proc_disarm",
+  "file": "upgrade_proc_disarm.png"
+ },
+ {
+  "name": "Berserker",
+  "file": "Berserker.png"
+ },
+ {
+  "name": "Frenzy",
+  "file": "Frenzy.png"
+ },
+ {
+  "name": "Siphon Bullets",
+  "file": "Siphon_Bullets.png"
+ },
+ {
+  "name": "Headshot Booster",
+  "file": "Headshot_Booster.png"
+ },
+ {
+  "name": "Weakening Headshot",
+  "file": "Weakening_Headshot.png"
+ },
+ {
+  "name": "Sharpshooter",
+  "file": "Sharpshooter.png"
+ },
+ {
+  "name": "Headhunter",
+  "file": "Headhunter.png"
+ },
+ {
+  "name": "Spirit Rend",
+  "file": "Spirit_Rend.png"
+ },
+ {
+  "name": "Crippling Headshot",
+  "file": "Crippling_Headshot.png"
+ },
+ {
+  "name": "upgrade_proc_tech_damage",
+  "file": "upgrade_proc_tech_damage.png"
+ },
+ {
+  "name": "Mystic Shot",
+  "file": "Mystic_Shot.png"
+ },
+ {
+  "name": "Lucky Shot",
+  "file": "Lucky_Shot.png"
+ },
+ {
+  "name": "Point Blank",
+  "file": "Point_Blank.png"
+ },
+ {
+  "name": "Toxic Bullets",
+  "file": "Toxic_Bullets.png"
+ },
+ {
+  "name": "upgrade_attack_speed_2",
+  "file": "upgrade_attack_speed_2.png"
+ },
+ {
+  "name": "upgrade_drum_magazine",
+  "file": "upgrade_drum_magazine.png"
+ },
+ {
+  "name": "Ricochet",
+  "file": "Ricochet.png"
+ },
+ {
+  "name": "Apex Combat",
+  "file": "Apex_Combat.png"
+ },
+ {
+  "name": "Extra Health",
+  "file": "Extra_Health.png"
+ },
+ {
+  "name": "Toughness",
+  "file": "Toughness.png"
+ },
+ {
+  "name": "upgrade_toughness_3",
+  "file": "upgrade_toughness_3.png"
+ },
+ {
+  "name": "Bullet Armor",
+  "file": "Bullet_Armor.png"
+ },
+ {
+  "name": "Spirit Armor",
+  "file": "Spirit_Armor.png"
+ },
+ {
+  "name": "upgrade_health_regen_1",
+  "file": "upgrade_health_regen_1.png"
+ },
+ {
+  "name": "Bullet Lifesteal",
+  "file": "Bullet_Lifesteal.png"
+ },
+ {
+  "name": "upgrade_double_jump",
+  "file": "upgrade_double_jump.png"
+ },
+ {
+  "name": "upgrade_health_regen_aura",
+  "file": "upgrade_health_regen_aura.png"
+ },
+ {
+  "name": "Debuff Reducer",
+  "file": "Debuff_Reducer.png"
+ },
+ {
+  "name": "Dispel Magic",
+  "file": "Dispel_Magic.png"
+ },
+ {
+  "name": "upgrade_high_impact_armor",
+  "file": "upgrade_high_impact_armor.png"
+ },
+ {
+  "name": "upgrade_slow_immunity",
+  "file": "upgrade_slow_immunity.png"
+ },
+ {
+  "name": "upgrade_weapon_power_and_health_drain",
+  "file": "upgrade_weapon_power_and_health_drain.png"
+ },
+ {
+  "name": "upgrade_active_bullet_shield",
+  "file": "upgrade_active_bullet_shield.png"
+ },
+ {
+  "name": "Spirit Resilience",
+  "file": "Spirit_Resilience.png"
+ },
+ {
+  "name": "Bullet Resilience",
+  "file": "Bullet_Resilience.png"
+ },
+ {
+  "name": "Metal Skin",
+  "file": "Metal_Skin.png"
+ },
+ {
+  "name": "Healing Booster",
+  "file": "Healing_Booster.png"
+ },
+ {
+  "name": "Fortitude",
+  "file": "Fortitude.png"
+ },
+ {
+  "name": "Leech",
+  "file": "Leech.png"
+ },
+ {
+  "name": "upgrade_bullet_damage_reduction_aura",
+  "file": "upgrade_bullet_damage_reduction_aura.png"
+ },
+ {
+  "name": "Sprint Boots",
+  "file": "Sprint_Boots.png"
+ },
+ {
+  "name": "Trophy Collector",
+  "file": "Trophy_Collector.png"
+ },
+ {
+  "name": "Enduring Speed",
+  "file": "Enduring_Speed.png"
+ },
+ {
+  "name": "Stamina Mastery",
+  "file": "Stamina_Mastery.png"
+ },
+ {
+  "name": "Aerial Supremacy",
+  "file": "Aerial_Supremacy.png"
+ },
+ {
+  "name": "Rapid Rounds",
+  "file": "Rapid_Rounds.png"
+ },
+ {
+  "name": "Extra Stamina",
+  "file": "Extra_Stamina.png"
+ },
+ {
+  "name": "Hunter's Aura",
+  "file": "Hunter_s_Aura.png"
+ },
+ {
+  "name": "upgrade_camouflage",
+  "file": "upgrade_camouflage.png"
+ },
+ {
+  "name": "upgrade_regenerative_armor",
+  "file": "upgrade_regenerative_armor.png"
+ },
+ {
+  "name": "Grit",
+  "file": "Grit.png"
+ },
+ {
+  "name": "Weapon Shielding",
+  "file": "Weapon_Shielding.png"
+ },
+ {
+  "name": "Spirit Shielding",
+  "file": "Spirit_Shielding.png"
+ },
+ {
+  "name": "Battle Vest",
+  "file": "Battle_Vest.png"
+ },
+ {
+  "name": "Enchanter's Emblem",
+  "file": "Enchanter_s_Emblem.png"
+ },
+ {
+  "name": "Extra Spirit",
+  "file": "Extra_Spirit.png"
+ },
+ {
+  "name": "Mystic Regeneration",
+  "file": "Mystic_Regeneration.png"
+ },
+ {
+  "name": "Improved Spirit",
+  "file": "Improved_Spirit.png"
+ },
+ {
+  "name": "Spiritual Overflow",
+  "file": "Spiritual_Overflow.png"
+ },
+ {
+  "name": "Return Fire",
+  "file": "Return_Fire.png"
+ },
+ {
+  "name": "Greater Expansion",
+  "file": "Greater_Expansion.png"
+ },
+ {
+  "name": "Mystic Expansion",
+  "file": "Mystic_Expansion.png"
+ },
+ {
+  "name": "Extra Charge",
+  "file": "Extra_Charge.png"
+ },
+ {
+  "name": "Spirit Lifesteal",
+  "file": "Spirit_Lifesteal.png"
+ },
+ {
+  "name": "upgrade_disarm",
+  "file": "upgrade_disarm.png"
+ },
+ {
+  "name": "Bullet Resist Shredder",
+  "file": "Bullet_Resist_Shredder.png"
+ },
+ {
+  "name": "Mystic Reverb",
+  "file": "Mystic_Reverb.png"
+ },
+ {
+  "name": "Mystic Burst",
+  "file": "Mystic_Burst.png"
+ },
+ {
+  "name": "Tankbuster",
+  "file": "Tankbuster.png"
+ },
+ {
+  "name": "upgrade_arcane_medallion",
+  "file": "upgrade_arcane_medallion.png"
+ },
+ {
+  "name": "Mystic Vulnerability",
+  "file": "Mystic_Vulnerability.png"
+ },
+ {
+  "name": "Healbane",
+  "file": "Healbane.png"
+ },
+ {
+  "name": "Mystic Slow",
+  "file": "Mystic_Slow.png"
+ },
+ {
+  "name": "Escalating Exposure",
+  "file": "Escalating_Exposure.png"
+ },
+ {
+  "name": "Rapid Recharge",
+  "file": "Rapid_Recharge.png"
+ },
+ {
+  "name": "Omnicharge Signet",
+  "file": "Omnicharge_Signet.png"
+ },
+ {
+  "name": "Compress Cooldown",
+  "file": "Compress_Cooldown.png"
+ },
+ {
+  "name": "Superior Cooldown",
+  "file": "Superior_Cooldown.png"
+ },
+ {
+  "name": "Shadow Step",
+  "file": "Shadow_Step.png"
+ },
+ {
+  "name": "upgrade_duration_extender",
+  "file": "upgrade_duration_extender.png"
+ },
+ {
+  "name": "upgrade_slowing_tech",
+  "file": "upgrade_slowing_tech.png"
+ },
+ {
+  "name": "Slowing Hex",
+  "file": "Slowing_Hex.png"
+ },
+ {
+  "name": "Spirit Sap",
+  "file": "Spirit_Sap.png"
+ },
+ {
+  "name": "Focus Lens",
+  "file": "Focus_Lens.png"
+ },
+ {
+  "name": "Rusted Barrel",
+  "file": "Rusted_Barrel.png"
+ },
+ {
+  "name": "Disarming Hex",
+  "file": "Disarming_Hex.png"
+ },
+ {
+  "name": "Rescue Beam",
+  "file": "Rescue_Beam.png"
+ },
+ {
+  "name": "Rebirth",
+  "file": "Rebirth.png"
+ },
+ {
+  "name": "Soul Rebirth",
+  "file": "Soul_Rebirth.png"
+ },
+ {
+  "name": "upgrade_long_range_slowing_tech",
+  "file": "upgrade_long_range_slowing_tech.png"
+ },
+ {
+  "name": "upgrade_full_spectrum",
+  "file": "upgrade_full_spectrum.png"
+ },
+ {
+  "name": "upgrade_tech_cleave",
+  "file": "upgrade_tech_cleave.png"
+ },
+ {
+  "name": "upgrade_bonus_ability_charge_3",
+  "file": "upgrade_bonus_ability_charge_3.png"
+ },
+ {
+  "name": "upgrade_charge_mastery",
+  "file": "upgrade_charge_mastery.png"
+ },
+ {
+  "name": "Decay",
+  "file": "Decay.png"
+ },
+ {
+  "name": "Scourge",
+  "file": "Scourge.png"
+ },
+ {
+  "name": "upgrade_aoe_tech_shield",
+  "file": "upgrade_aoe_tech_shield.png"
+ },
+ {
+  "name": "Knockdown",
+  "file": "Knockdown.png"
+ },
+ {
+  "name": "Phantom Strike",
+  "file": "Phantom_Strike.png"
+ },
+ {
+  "name": "Warp Stone",
+  "file": "Warp_Stone.png"
+ },
+ {
+  "name": "Vortex Web",
+  "file": "Vortex_Web.png"
+ },
+ {
+  "name": "Refresher",
+  "file": "Refresher.png"
+ },
+ {
+  "name": "Echo Shard",
+  "file": "Echo_Shard.png"
+ },
+ {
+  "name": "Torment Pulse",
+  "file": "Torment_Pulse.png"
+ },
+ {
+  "name": "Cheat Death",
+  "file": "Cheat_Death.png"
+ },
+ {
+  "name": "upgrade_reload_speed",
+  "file": "upgrade_reload_speed.png"
+ },
+ {
+  "name": "upgrade_cloaking_device",
+  "file": "upgrade_cloaking_device.png"
+ },
+ {
+  "name": "Shadow Weave",
+  "file": "Shadow_Weave.png"
+ },
+ {
+  "name": "upgrade_fire_rate_aura",
+  "file": "upgrade_fire_rate_aura.png"
+ },
+ {
+  "name": "upgrade_weapon_overdrive_clip",
+  "file": "upgrade_weapon_overdrive_clip.png"
+ },
+ {
+  "name": "Majestic Leap - Disabled",
+  "file": "Majestic_Leap_-_Disabled.png"
+ },
+ {
+  "name": "Majestic Leap",
+  "file": "Majestic_Leap.png"
+ },
+ {
+  "name": "upgrade_aerial_assault",
+  "file": "upgrade_aerial_assault.png"
+ },
+ {
+  "name": "Healing Nova",
+  "file": "Healing_Nova.png"
+ },
+ {
+  "name": "Restorative Locket",
+  "file": "Restorative_Locket.png"
+ },
+ {
+  "name": "Healing Rite",
+  "file": "Healing_Rite.png"
+ },
+ {
+  "name": "Shrink Ray",
+  "file": "Shrink_Ray.png"
+ },
+ {
+  "name": "Infuser",
+  "file": "Infuser.png"
+ },
+ {
+  "name": "Guardian Ward",
+  "file": "Guardian_Ward.png"
+ },
+ {
+  "name": "Divine Barrier",
+  "file": "Divine_Barrier.png"
+ },
+ {
+  "name": "upgrade_aoe_smoke_bomb",
+  "file": "upgrade_aoe_smoke_bomb.png"
+ },
+ {
+  "name": "Alchemical Fire",
+  "file": "Alchemical_Fire.png"
+ },
+ {
+  "name": "Fleetfoot",
+  "file": "Fleetfoot.png"
+ },
+ {
+  "name": "Kinetic Dash",
+  "file": "Kinetic_Dash.png"
+ },
+ {
+  "name": "Arcane Surge",
+  "file": "Arcane_Surge.png"
+ },
+ {
+  "name": "upgrade_weapon_eater",
+  "file": "upgrade_weapon_eater.png"
+ },
+ {
+  "name": "upgrade_weapon_instant_reload",
+  "file": "upgrade_weapon_instant_reload.png"
+ },
+ {
+  "name": "Unstoppable",
+  "file": "Unstoppable.png"
+ },
+ {
+  "name": "Colossus",
+  "file": "Colossus.png"
+ },
+ {
+  "name": "Cold Front",
+  "file": "Cold_Front.png"
+ },
+ {
+  "name": "Arctic Blast",
+  "file": "Arctic_Blast.png"
+ },
+ {
+  "name": "upgrade_aoe_silence",
+  "file": "upgrade_aoe_silence.png"
+ },
+ {
+  "name": "Ethereal Shift",
+  "file": "Ethereal_Shift.png"
+ },
+ {
+  "name": "upgrade_stasis_bomb",
+  "file": "upgrade_stasis_bomb.png"
+ },
+ {
+  "name": "upgrade_quarantine",
+  "file": "upgrade_quarantine.png"
+ },
+ {
+  "name": "Cursed Relic",
+  "file": "Cursed_Relic.png"
+ },
+ {
+  "name": "upgrade_imbued_ability",
+  "file": "upgrade_imbued_ability.png"
+ },
+ {
+  "name": "Duration Extender",
+  "file": "Duration_Extender.png"
+ },
+ {
+  "name": "Superior Duration",
+  "file": "Superior_Duration.png"
+ },
+ {
+  "name": "Glass Cannon",
+  "file": "Glass_Cannon.png"
+ },
+ {
+  "name": "Fury Trance",
+  "file": "Fury_Trance.png"
+ },
+ {
+  "name": "Vampiric Burst",
+  "file": "Vampiric_Burst.png"
+ },
+ {
+  "name": "upgrade_mod_disruptor",
+  "file": "upgrade_mod_disruptor.png"
+ },
+ {
+  "name": "upgrade_frenzy",
+  "file": "upgrade_frenzy.png"
+ },
+ {
+  "name": "upgrade_burst_fire_actuator",
+  "file": "upgrade_burst_fire_actuator.png"
+ },
+ {
+  "name": "Lifestrike",
+  "file": "Lifestrike.png"
+ },
+ {
+  "name": "Spirit Strike",
+  "file": "Spirit_Strike.png"
+ },
+ {
+  "name": "Spirit Snatch",
+  "file": "Spirit_Snatch.png"
+ },
+ {
+  "name": "Melee Charge",
+  "file": "Melee_Charge.png"
+ },
+ {
+  "name": "Crushing Fists",
+  "file": "Crushing_Fists.png"
+ },
+ {
+  "name": "upgrade_charmed_wraps",
+  "file": "upgrade_charmed_wraps.png"
+ },
+ {
+  "name": "upgrade_belt_fed_magazine",
+  "file": "upgrade_belt_fed_magazine.png"
+ },
+ {
+  "name": "Diviner's Kevlar",
+  "file": "Diviner_s_Kevlar.png"
+ },
+ {
+  "name": "Radiant Regeneration",
+  "file": "Radiant_Regeneration.png"
+ },
+ {
+  "name": "Boundless Spirit",
+  "file": "Boundless_Spirit.png"
+ },
+ {
+  "name": "Burst Fire",
+  "file": "Burst_Fire.png"
+ },
+ {
+  "name": "Enduring Spirit",
+  "file": "Enduring_Spirit.png"
+ },
+ {
+  "name": "Extra Regen",
+  "file": "Extra_Regen.png"
+ },
+ {
+  "name": "upgrade_magic_clarity",
+  "file": "upgrade_magic_clarity.png"
+ },
+ {
+  "name": "Surge of Power",
+  "file": "Surge_of_Power.png"
+ },
+ {
+  "name": "Suppressor",
+  "file": "Suppressor.png"
+ },
+ {
+  "name": "Quicksilver Reload",
+  "file": "Quicksilver_Reload.png"
+ },
+ {
+  "name": "Mercurial Magnum",
+  "file": "Mercurial_Magnum.png"
+ },
+ {
+  "name": "upgrade_arcane_eater",
+  "file": "upgrade_arcane_eater.png"
+ },
+ {
+  "name": "upgrade_predator_precision",
+  "file": "upgrade_predator_precision.png"
+ },
+ {
+  "name": "Intensifying Magazine",
+  "file": "Intensifying_Magazine.png"
+ },
+ {
+  "name": "Escalating Resilience",
+  "file": "Escalating_Resilience.png"
+ },
+ {
+  "name": "Swift Striker",
+  "file": "Swift_Striker.png"
+ },
+ {
+  "name": "Veil Walker",
+  "file": "Veil_Walker.png"
+ },
+ {
+  "name": "Reactive Barrier",
+  "file": "Reactive_Barrier.png"
+ },
+ {
+  "name": "Indomitable",
+  "file": "Indomitable.png"
+ },
+ {
+  "name": "Restorative Shot",
+  "file": "Restorative_Shot.png"
+ },
+ {
+  "name": "Titanic Magazine",
+  "file": "Titanic_Magazine.png"
+ },
+ {
+  "name": "Split Shot",
+  "file": "Split_Shot.png"
+ },
+ {
+  "name": "Active Reload",
+  "file": "Active_Reload.png"
+ },
+ {
+  "name": "Magic Carpet",
+  "file": "Magic_Carpet.png"
+ },
+ {
+  "name": "Hexafoil Ward",
+  "file": "Hexafoil_Ward.png"
+ },
+ {
+  "name": "Hex-Sealed Knuckles",
+  "file": "Hex-Sealed_Knuckles.png"
+ },
+ {
+  "name": "Conjure Missiles",
+  "file": "Conjure_Missiles.png"
+ },
+ {
+  "name": "Patron's Healing",
+  "file": "Patron_s_Healing.png"
+ },
+ {
+  "name": "Spirit Burn",
+  "file": "Spirit_Burn.png"
+ },
+ {
+  "name": "Lightning Scroll",
+  "file": "Lightning_Scroll.png"
+ },
+ {
+  "name": "Soul Explosion",
+  "file": "Soul_Explosion.png"
+ },
+ {
+  "name": "Witchmail",
+  "file": "Witchmail.png"
+ },
+ {
+  "name": "Healing Tempo",
+  "file": "Healing_Tempo.png"
+ },
+ {
+  "name": "Endless Magazine",
+  "file": "Endless_Magazine.png"
+ },
+ {
+  "name": "Glass Cannon v2",
+  "file": "Glass_Cannon_v2.png"
+ },
+ {
+  "name": "Armor Piercer",
+  "file": "Armor_Piercer.png"
+ },
+ {
+  "name": "Infinite Rounds",
+  "file": "Infinite_Rounds.png"
+ },
+ {
+  "name": "Plated Armor",
+  "file": "Plated_Armor.png"
+ },
+ {
+  "name": "Juggernaut",
+  "file": "Juggernaut.png"
+ },
+ {
+  "name": "Seraphim Wings",
+  "file": "Seraphim_Wings.png"
+ },
+ {
+  "name": "Mystical Piano",
+  "file": "Mystical_Piano.png"
+ },
+ {
+  "name": "Nullification Burst",
+  "file": "Nullification_Burst.png"
+ },
+ {
+  "name": "Celestial Blessing",
+  "file": "Celestial_Blessing.png"
+ },
+ {
+  "name": "Haunting Shot",
+  "file": "Haunting_Shot.png"
+ },
+ {
+  "name": "Prism Blast",
+  "file": "Prism_Blast.png"
+ },
+ {
+  "name": "Ballistic Enchantment",
+  "file": "Ballistic_Enchantment.png"
+ },
+ {
+  "name": "Recharging Rush",
+  "file": "Recharging_Rush.png"
+ },
+ {
+  "name": "Golden Goose Egg",
+  "file": "Golden_Goose_Egg.png"
+ }
+]

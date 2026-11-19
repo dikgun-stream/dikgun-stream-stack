@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Input</title>
+<style>
+  html, body { margin:0; background:transparent; overflow:hidden;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-user-select:none; user-select:none; }
+  #wrap { display:flex; gap:14px; align-items:flex-end; padding:6px; }
+
+  .pad { display:flex; flex-direction:column; gap:5px; }
+  .row { display:flex; gap:5px; }
+  .key {
+    width:38px; height:38px; border-radius:8px;
+    background:rgba(13,17,23,.72); border:1px solid rgba(255,255,255,.16);
+    color:#c9d5e3; font-size:12px; font-weight:600;
+    display:flex; align-items:center; justify-content:center;
+    transition: background .06s linear, color .06s linear, transform .06s linear, border-color .06s linear;
+  }
+  .key.wide { width:auto; min-width:78px; padding:0 10px; }
+  .key.down {
+    background:#4ade80; border-color:#86efac; color:#04140a;
+    transform:translateY(2px) scale(.97);
+  }
+
+  .mouse { position:relative; width:66px; height:104px; }
+  .shell {
+    position:absolute; inset:0; border-radius:33px;
+    background:rgba(13,17,23,.72); border:1px solid rgba(255,255,255,.16);
+  }
+  .btn {
+    position:absolute; display:flex; align-items:center; justify-content:center;
+    font-size:10px; font-weight:700; color:#8fa1b5;
+    transition:background .06s linear, color .06s linear;
+  }
+  .lmb { top:4px; left:4px; width:27px; height:34px; border-radius:14px 4px 4px 14px;
+         border-top-left-radius:28px; }
+  .rmb { top:4px; right:4px; width:27px; height:34px; border-radius:4px 14px 14px 4px;
+         border-top-right-radius:28px; }
+  .mmb { top:15px; left:27px; width:12px; height:20px; border-radius:6px; }
+  .side { left:4px; width:12px; height:15px; border-radius:4px; }
+  /* The mouse is drawn nose-up, so LOWER means further back. Mouse 4 is the
+     rear/back thumb button by convention, so it sits below Mouse 5. */
+  .side.s4 { top:64px; }
+  .side.s5 { top:46px; }
+  .btn.down { background:#4ade80; color:#04140a; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div class="pad" id="pad"></div>
+  <div class="mouse">
+    <div class="shell"></div>
+    <div class="btn lmb" id="m1">1</div>
+    <div class="btn rmb" id="m2">2</div>
+    <div class="btn mmb" id="m3">3</div>
+    <div class="btn side s4" id="m4">4</div>
+    <div class="btn side s5" id="m5">5</div>
+  </div>
+</div>
+<script>
+// Per-game key clusters. Only keys listed here are drawn; everything else the
+// watcher reports is simply ignored, so a game with extra bindings still works.
+const LAYOUTS = {
+  tarkov: [
+    ['TAB', '1', '2', '3', '4', '5'],
+    ['SHIFT', 'Q', 'W', 'E', 'R', 'F'],
+    ['CTRL', 'A', 'S', 'D', 'G', 'T'],
+    ['ALT', 'Z', 'X', 'C', 'V', 'B'],
+    ['SPACE', 'M', 'ESC', 'ENTER']
+  ],
+  deadlock: [
+    ['1', '2', '3', '4', 'TAB'],
+    ['SHIFT', 'Q', 'W', 'E', 'R', 'F'],
+    ['CTRL', 'A', 'S', 'D', 'V', 'C'],
+    ['ALT', 'Z', 'X', 'G', 'B', 'M'],
+    ['SPACE', 'ESC', 'ENTER']
+  ],
+  apex: [
+    ['1', '2', '3', 'TAB', 'M'],
+    ['SHIFT', 'Q', 'W', 'E', 'R', 'F'],
+    ['CTRL', 'A', 'S', 'D', 'G', 'Z'],
+    ['ALT', 'X', 'C', 'V', 'B', 'T'],
+    ['SPACE', 'ESC', 'ENTER']
+  ],
+  generic: [
+    ['SHIFT', 'W', 'A', 'S', 'D', 'SPACE']
+  ]
+};
+
+const params = new URLSearchParams(location.search);
+const game = (params.get('game') || 'generic').toLowerCase();
+const rows = LAYOUTS[game] || LAYOUTS.generic;
+
+const pad = document.getElementById('pad');
+const keyEls = new Map();
+for (const row of rows) {
+  const r = document.createElement('div');
+  r.className = 'row';
+  for (const label of row) {
+    const k = document.createElement('div');
+    k.className = 'key' + (label.length > 2 ? ' wide' : '');
+    k.textContent = label;
+    k.dataset.key = label;
+    r.appendChild(k);
+    keyEls.set(label, k);
+  }
+  pad.appendChild(r);
+}
+
+const mouseEls = { MOUSE1: 'm1', MOUSE2: 'm2', MOUSE3: 'm3', MOUSE4: 'm4', MOUSE5: 'm5' };
+
+function apply(key, down) {
+  const el = keyEls.get(key);
+  if (el) el.classList.toggle('down', !!down);
+  const mid = mouseEls[key];
+  if (mid) document.getElementById(mid).classList.toggle('down', !!down);
+}
+
+// Seed from current state so keys already held when OBS loads the source show up.
+fetch('/api/input/state').then(r => r.json()).then(s => {
+  for (const [k, v] of Object.entries(s.pressed || {})) if (v) apply(k, true);
+}).catch(() => {});
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws?role=overlay&ch=input`);
+  ws.onmessage = (e) => {
+    let m; try { m = JSON.parse(e.data); } catch { return; }
+    if (m.kind === 'input') apply(m.key, m.down);
+  };
+  ws.onclose = () => setTimeout(connect, 1200);
+  ws.onerror = () => ws.close();
+}
+connect();
+</script>
+</body>
+</html>

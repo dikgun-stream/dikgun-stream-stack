@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Stream Ending</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Rubik:wght@500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/scene.css">
+<style>
+  /* Ending carries the CTA weight (Twitch guidance puts follow/sub conversion
+     here rather than on the starting scene), so the red element is the CTA
+     block itself rather than a decorative wedge. */
+
+  .slab-b {
+    position: absolute; z-index: 2;
+    left: 0; right: 0; bottom: 0;
+    height: 12.8vmin;    /* sits behind the marquee + plate, not a dead void */
+    background: var(--ink);
+  }
+  .v .slab-b { height: 14vmin; }
+
+  /* A rotated band spans the frame no matter how short it is, so it kept
+     clipping the headline. Static stacked rules instead: same constructivist
+     device, no collision with the type. */
+  .axis.sweep {
+    top: 0; left: 0; width: 100%; height: 2.2vmin;
+    transform: none; animation: none;
+    z-index: 1;
+  }
+  .rule-steel {
+    position: absolute; z-index: 1;
+    left: 0; top: 2.2vmin; width: 42%; height: .7vmin;
+    background: var(--steel);
+  }
+
+  #title {
+    position: absolute; z-index: 6;
+    left: var(--u12); top: 16%;
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 14vmin;
+    line-height: .84;
+    letter-spacing: -.02em;
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+  #title .ln { display: block; }
+
+  /* the one red element on the frame */
+  .cta {
+    position: absolute; z-index: 6;
+    right: var(--u12); top: 15%;
+    width: 44vmin;
+    background: var(--red);
+    color: var(--paper-hi);
+    padding: 2.6vmin 2.8vmin 2.8vmin;
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 3.2vmin 100%, 0 calc(100% - 3.2vmin));
+  }
+  .cta .k {
+    font-family: var(--mono);
+    font-size: 1.25vmin;
+    letter-spacing: .3em;
+    opacity: .82;
+  }
+  .cta .v {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 6.4vmin;
+    line-height: .9;
+    text-transform: uppercase;
+    letter-spacing: -.01em;
+    margin-top: 8px;
+  }
+  .cta .n {
+    font-family: var(--mono);
+    font-size: 1.5vmin;
+    letter-spacing: .1em;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,.35);
+  }
+
+  .meta-grid {
+    position: absolute; z-index: 6;
+    left: var(--u12); bottom: 24vmin;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(26vmin, auto));
+    gap: var(--u6);
+  }
+  .meta-grid .cell .k {
+    font-family: var(--mono);
+    font-size: 1.2vmin;
+    letter-spacing: .28em;
+    color: var(--panel);
+    display: block;
+    margin-bottom: 4px;
+  }
+  .meta-grid .cell .v {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 2.6vmin;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+
+  .plate-bottom {
+    position: absolute; z-index: 7;
+    left: 0; right: 0; bottom: 0;
+    height: 8.2vmin;
+    display: flex; align-items: center;
+    padding: 0 var(--u12);
+    gap: var(--u6);
+  }
+  .plate-bottom .tag {
+    font-family: var(--mono); font-size: 1.25vmin;
+    letter-spacing: .28em; color: var(--steel); white-space: nowrap;
+  }
+  .plate-bottom .game {
+    font-family: var(--display); font-weight: 500;
+    font-size: 3.4vmin; letter-spacing: .02em;
+    text-transform: uppercase; color: var(--paper-hi);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .plate-bottom .game.is-long { font-size: 2.7vmin; }
+  .plate-bottom .sep { flex: 0 0 var(--rule-thin); height: 55%; background: rgba(255,255,255,.22); }
+  .plate-bottom .grow { flex: 1 1 auto; }
+  .plate-bottom .meta {
+    font-family: var(--mono); font-size: 1.25vmin;
+    letter-spacing: .18em; color: var(--steel); white-space: nowrap;
+  }
+
+  .strip {
+    position: absolute; z-index: 7;
+    left: 0; right: 0; bottom: 8.2vmin;
+    height: 4.6vmin;
+    background: var(--red); color: var(--paper-hi);
+    display: flex; align-items: center; overflow: hidden;
+  }
+  .strip .marquee { width: 100%; }
+  .strip .marquee-track {
+    font-family: var(--display); font-weight: 500;
+    font-size: 2.3vmin; letter-spacing: .16em; text-transform: uppercase;
+  }
+  .strip .dot { color: var(--paper); opacity: .55; }
+
+  /* ---- vertical ---------------------------------------------------------- */
+  .v #title { left: var(--u6); top: 14%; font-size: 18vmin; }
+  .v .cta {
+    left: var(--u6); right: var(--u6); top: auto; bottom: 40vmin;
+    width: auto;
+  }
+  .v .cta .v { font-size: 8vmin; }
+  .v .meta-grid {
+    left: var(--u6); bottom: 22vmin;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--u4);
+  }
+  .v .meta-grid .cell .v { font-size: 3.2vmin; }
+  .v .plate-bottom {
+    height: 9vmin; padding: 0 var(--u6);
+    flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px;
+  }
+  .v .plate-bottom .sep, .v .plate-bottom .grow { display: none; }
+  .v .plate-bottom .game { font-size: 3.6vmin; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="halftone"></div>
+  <div class="axis band-ink sweep"></div>
+  <div class="rule-steel"></div>
+  <div class="slab-b"></div>
+
+  <div id="title"><span class="ln">Thanks For</span><span class="ln">Watching</span></div>
+
+  <div class="cta">
+    <div class="k">NEXT TIME</div>
+    <div class="v">Follow The Channel</div>
+    <div class="n"><span data-goal-followers>591 / 1,000</span> FOLLOWERS</div>
+  </div>
+
+  <div class="meta-grid">
+    <div class="cell">
+      <span class="k">VODS &amp; CLIPS</span>
+      <span class="v">TWITCH.TV/DIKGUN</span>
+    </div>
+    <div class="cell">
+      <span class="k">NEXT STREAM</span>
+      <span class="v">CHECK THE SCHEDULE</span>
+    </div>
+    <div class="cell">
+      <span class="k">SESSION</span>
+      <span class="v" data-stamp>-</span>
+    </div>
+  </div>
+
+  <div class="strip">
+    <div class="marquee">
+      <div class="marquee-track" data-speed="52">
+        <span>TWITCH.TV/DIKGUN</span><span class="dot">/</span>
+        <span>VODS AND CLIPS ARE UP</span><span class="dot">/</span>
+        <span>THANKS FOR HANGING OUT</span><span class="dot">/</span>
+        <span>FOLLOW SO THE NEXT ONE FINDS YOU</span><span class="dot">/</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="plate-bottom plate chamfer">
+    <span class="tag">PLAYED</span>
+    <span class="sep"></span>
+    <span class="game" data-game data-game-wrap>CATEGORY PENDING</span>
+    <span class="grow"></span>
+    <span class="meta">GOODNIGHT</span>
+  </div>
+
+  <div class="vignette"></div>
+  <div class="grain"></div>
+</div>
+
+<script src="/assets/scene.js"></script>
+<script>
+  document.addEventListener('scene:event', (e) => {
+    if (e.detail && e.detail.type) document.body.dataset.lastEvent = e.detail.type;
+  });
+</script>
+</body>
+</html>

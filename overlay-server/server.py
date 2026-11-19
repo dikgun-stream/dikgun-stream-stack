@@ -31,6 +31,9 @@ from pydantic import BaseModel, Field
 from obs_client import OBSClient
 from twitch_irc import TwitchIRC
 from chat_engine import ChatEngine
+from input_capture import InputWatcher
+from deadlock_hud import (read_scoreboard, find_badge, read_damage, read_items,
+                          KILL_THRESHOLD)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -65,6 +68,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "hints": [],
     "counters": {"deaths": 0, "kills": 0},
     "poll": {"active": False, "question": "", "options": [], "votes": {}},
+    "deadlock": {"boon": 0, "souls": 0, "spirit": 0, "gun": 0, "vitality": 0,
+                 "kills": 0, "assists": 0, "damage": 0, "items": [],
+                 "account_id": 0, "session_start": 0, "wins": 0, "losses": 0,
+                 "last_result": None, "player_name": ""},
 }
 
 
@@ -212,15 +219,327 @@ IRC: TwitchIRC | None = (
 )
 
 
+CAPTURES = Path(os.environ.get("LOCALAPPDATA", "C:\\")) / "StreamerMode" / "captures"
+GAME_SOURCE = "SRC_Capture_Deadlock"
+
+
+async def grab_game_frame(label: str = "frame", w: int = 1920, h: int = 1080) -> str | None:
+    """Save one frame of the OBS game capture to disk.
+
+    This is the *only* way we look at the game: OBS's own captured output, which
+    the streamer is already broadcasting. No memory access, no injection, no
+    process inspection.
+    """
+    import base64
+
+    if not OBS.connected:
+        return None
+    try:
+        res = await OBS.request("GetSourceScreenshot", {
+            "sourceName": GAME_SOURCE, "imageFormat": "png",
+            "imageWidth": w, "imageHeight": h,
+        })
+    except (RuntimeError, Exception):  # noqa: BLE001
+        return None
+    data = (res or {}).get("imageData", "")
+    if "," not in data:
+        return None
+    CAPTURES.mkdir(parents=True, exist_ok=True)
+    out = CAPTURES / f"{label}-{int(time.time() * 1000)}.png"
+    try:
+        out.write_bytes(base64.b64decode(data.split(",", 1)[1]))
+    except Exception:  # noqa: BLE001
+        return None
+    return str(out)
+
+
+# --------------------------------------------------------------- input overlay
+# Streams global key/mouse transitions to the `input` overlay. The watcher runs
+# on its own thread and hands work to the event loop thread-safely; the queue is
+# bounded so a stalled consumer can never grow memory without limit.
+_INPUT_QUEUE: asyncio.Queue | None = None
+_INPUT_LOOP: asyncio.AbstractEventLoop | None = None
+_INPUT: InputWatcher | None = None
+
+
+def _on_input_change(kind: str, name: str, down: bool) -> None:
+    loop, queue = _INPUT_LOOP, _INPUT_QUEUE
+    if loop is None or queue is None:
+        return
+    try:
+        loop.call_soon_threadsafe(
+            queue.put_nowait,
+            {"kind": "input", "type": kind, "key": name, "down": down,
+             "ts": time.time()},
+        )
+    except (RuntimeError, asyncio.QueueFull):
+        pass          # loop closed or consumer behind; dropping a frame is fine
+
+
+_TAB_TASK: asyncio.Task | None = None
+
+
+async def _tab_monitor() -> None:
+    """While Tab is held, keep watching for the scoreboard.
+
+    This is the only window where it is on screen. Parsing K/D/A on release (as
+    an earlier version did) captured a frame 0.45s after the key came up, by
+    which time the scoreboard is gone and the parse silently fails.
+    """
+    state = _dl()
+    name = state.get("player_name") or ""
+    for _ in range(14):                      # ~11 seconds of holding Tab
+        await asyncio.sleep(0.8)
+        path = await grab_game_frame("tabmon", 1920, 1080)
+        if not path:
+            continue
+        kda = None
+        if name:
+            try:
+                kda = await asyncio.to_thread(read_scoreboard, path, name)
+            except Exception:  # noqa: BLE001
+                kda = None
+        # the frame is only needed until it has been read
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        if kda and kda.complete:
+            if _maybe_new_match(state, kda):
+                log.info("new match detected (K/D/A 0/0/0) - per-match stats cleared")
+            else:
+                state["kills"] = kda.kills
+                state["deaths"] = kda.deaths
+                state["assists"] = kda.assists
+                _apply_deaths(state, kda.deaths)
+                log.info("scoreboard parsed: K/D/A %d/%d/%d",
+                         kda.kills, kda.deaths, kda.assists)
+            save_config(CONFIG)
+            await _dl_broadcast()
+            return
+    log.info("tab monitor finished without a readable scoreboard")
+
+
+def _apply_life_damage(state: dict, life_value: int) -> None:
+    """Track the current life's damage without ever double-counting.
+
+    The panel's "Total Damage" is scoped to your CURRENT LIFE and resets on
+    respawn. Two rules keep the session total honest:
+
+      * within a life the value only goes up, so we keep the max -- that
+        survives a reset we have not seen yet instead of losing the total
+      * the bank happens ONLY when a death is confirmed via the scoreboard,
+        so the same life can never be rolled in twice
+    """
+    state["damage_life"] = max(state.get("damage_life", 0), max(0, int(life_value)))
+    state["damage"] = state.get("damage_total", 0) + state["damage_life"]
+
+
+def _apply_deaths(state: dict, deaths: int) -> None:
+    """A confirmed death ends the life: bank it and start the next one at zero."""
+    prev = state.get("last_deaths")
+    if prev is not None and deaths > prev and state.get("damage_life", 0) > 0:
+        state["damage_total"] = state.get("damage_total", 0) + state["damage_life"]
+        state["damage_life"] = 0
+        state["damage"] = state.get("damage_total", 0)
+    state["last_deaths"] = deaths
+
+
+def _maybe_new_match(state: dict, kda) -> bool:
+    """Detect a match boundary from the scoreboard.
+
+    The public API only knows about a match after it ends, and bot matches never
+    appear in it at all, so the HUD is the reliable signal: a fresh match always
+    shows 0/0/0. Mid-match that cannot legitimately happen once you have any
+    kills, deaths or assists, so "back to 0/0/0" means the next game started.
+    """
+    prev = [int(state.get(k) or 0) for k in ("kills", "deaths", "assists")]
+    if any(prev) and kda.complete and (kda.kills, kda.deaths, kda.assists) == (0, 0, 0):
+        state.update({
+            "kills": 0, "deaths": 0, "assists": 0,
+            "damage": 0, "damage_life": 0, "damage_total": 0, "damage_in": 0,
+            "last_deaths": 0,
+            "items": [],
+            "match_started": int(time.time()),
+        })
+        return True
+    return False
+
+
+async def _capture_scoreboard() -> None:
+    """Grab the scoreboard once it has settled, then read the player's K/D/A."""
+    await asyncio.sleep(0.45)
+    path = await grab_game_frame("scoreboard", 1920, 1080)
+    if not path:
+        return
+    state = _dl()
+    name = state.get("player_name") or ""
+    if not name:
+        return
+    try:
+        kda = await asyncio.to_thread(read_scoreboard, path, name)
+    except Exception:  # noqa: BLE001
+        kda = None
+    if kda and kda.complete:
+        if _maybe_new_match(state, kda):
+            log.info("new match detected (K/D/A back to 0/0/0) - per-match stats cleared")
+            save_config(CONFIG)
+            await _dl_broadcast()
+        else:
+            state["kills"] = kda.kills
+            state["deaths"] = kda.deaths
+            state["assists"] = kda.assists
+            _apply_deaths(state, kda.deaths)
+            save_config(CONFIG)
+            await _dl_broadcast()
+    # Damage readout removed: the panel's layout changes between modes and
+    # could not be read reliably, and it was more trouble than it was worth.
+    save_config(CONFIG)
+    await _dl_broadcast()
+
+
+async def _item_watch_loop() -> None:
+    """Keep the item tower in sync with the bottom-left grid.
+
+    Purchases are visible in the HUD at all times, so a slow poll is enough and
+    avoids competing with the badge watcher for capture bandwidth.
+    """
+    while True:
+        await asyncio.sleep(2.5)
+        if int(_dl().get("account_id") or 0) == 0:
+            continue
+        path = await grab_game_frame("itemwatch", 1920, 1080)
+        if not path:
+            continue
+        try:
+            names = await asyncio.to_thread(read_items, path)
+        except Exception:  # noqa: BLE001
+            names = None
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        if names is None:
+            continue          # unreadable frame (e.g. shop screen) - keep last known
+        state = _dl()
+        current = [i.get("name") for i in state.get("items", [])]
+        new_names = [d["name"] for d in names]
+        if new_names != current:
+            # carry the card art through so the tower shows real icons
+            state["items"] = [
+                {"name": d["name"],
+                 "icon": f"/items/{d['file']}" if d.get("file") else None}
+                for d in names
+            ]
+            save_config(CONFIG)
+            await _dl_broadcast()
+            log.info("items updated: %s", new_names)
+
+
+async def _capture_janitor() -> None:
+    """Delete capture frames after an hour.
+
+    Tab holds produce a PNG every 0.8s, and the badge watcher runs constantly,
+    so without this the captures folder grows without bound.
+    """
+    while True:
+        await asyncio.sleep(600)
+        try:
+            cutoff = time.time() - 3600
+            removed = 0
+            for f in CAPTURES.glob("*.png"):
+                try:
+                    if f.stat().st_mtime < cutoff:
+                        f.unlink(missing_ok=True)
+                        removed += 1
+                except OSError:
+                    pass
+            if removed:
+                log.info("capture janitor removed %d old frame(s)", removed)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+async def _kill_watch_loop() -> None:
+    """Watch for the KILL / ASSIST badge and count each appearance once."""
+    last_hit = 0.0
+    while True:
+        await asyncio.sleep(1.5)
+        if int(_dl().get("account_id") or 0) == 0:
+            continue
+        path = await grab_game_frame("badgewatch", 1280, 720)
+        if not path:
+            continue
+        try:
+            kind, score = await asyncio.to_thread(find_badge, path)
+        except Exception:  # noqa: BLE001
+            kind, score = None, 0.0
+        try:
+            os.remove(path)          # keep the captures folder from filling up
+        except OSError:
+            pass
+        if kind and (time.time() - last_hit) > 4.0:
+            last_hit = time.time()
+            state = _dl()
+            field = "kills" if kind == "kill" else "assists"
+            state[field] = int(state.get(field, 0)) + 1
+            save_config(CONFIG)
+            await _dl_broadcast()
+            log.info("%s badge detected (%.2f) -> %s=%s", kind, score, field, state[field])
+
+
+async def _input_pump() -> None:
+    assert _INPUT_QUEUE is not None
+    while True:
+        event = await _INPUT_QUEUE.get()
+        await HUB.to_overlays("input", event)
+        # Tab: on press start passively watching for the damage panel; on
+        # release parse the K/D/A scoreboard from one clean frame.
+        if event.get("type") == "key" and event.get("key") == "TAB":
+            global _TAB_TASK
+            if event.get("down"):
+                if _TAB_TASK and not _TAB_TASK.done():
+                    _TAB_TASK.cancel()
+                _TAB_TASK = asyncio.create_task(_tab_monitor())
+            else:
+                if _TAB_TASK and not _TAB_TASK.done():
+                    _TAB_TASK.cancel()
+                asyncio.create_task(_capture_scoreboard())
+        # F9 = "capture that!" — grab whatever is on screen right now. Handy for
+        # one-off frames like an assist badge we do not have a template for yet.
+        if (event.get("type") == "key" and event.get("key") == "F9"
+                and event.get("down")):
+            asyncio.create_task(grab_game_frame("hotkey", 1920, 1080))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _INPUT_QUEUE, _INPUT_LOOP, _INPUT
+
+    _INPUT_QUEUE = asyncio.Queue(maxsize=512)
+    _INPUT_LOOP = asyncio.get_running_loop()
+    try:
+        _INPUT = InputWatcher(_on_input_change)
+        _INPUT.start()
+        log.info("input watcher started (polling, no hooks)")
+    except Exception as exc:  # noqa: BLE001 - overlay is optional
+        log.warning("input watcher unavailable: %s", exc)
+        _INPUT = None
+
     tasks = [asyncio.create_task(OBS.run(), name="obs-client")]
     if IRC:
         tasks.append(asyncio.create_task(IRC.run(), name="twitch-irc"))
+    tasks.append(asyncio.create_task(_input_pump(), name="input-pump"))
+    tasks.append(asyncio.create_task(_dl_poll_loop(), name="deadlock-poll"))
+    tasks.append(asyncio.create_task(_kill_watch_loop(), name="kill-watch"))
+    tasks.append(asyncio.create_task(_item_watch_loop(), name="item-watch"))
+    tasks.append(asyncio.create_task(_capture_janitor(), name="capture-janitor"))
     log.info("overlay server ready on http://127.0.0.1:7475")
     try:
         yield
     finally:
+        if _INPUT:
+            _INPUT.stop()
         for t in tasks:
             t.cancel()
         for t in tasks:
@@ -231,6 +550,19 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="DikGun overlays", lifespan=lifespan)
+
+# Item card art for the tower, served straight from the web root.
+_ITEMS_DIR = PUBLIC / "items"
+_ITEMS_DIR.mkdir(parents=True, exist_ok=True)
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+app.mount("/items", StaticFiles(directory=str(_ITEMS_DIR)), name="items")
+
+# Shared scene stylesheet/script. The /overlay/{name} route appends ".html", so
+# asset files cannot live under /overlay and need their own mount.
+_ASSETS_DIR = PUBLIC / "assets"
+_ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="assets")
 
 
 # --------------------------------------------------------------------------- models
@@ -517,6 +849,7 @@ async def set_stream_info(body: StreamInfoIn) -> dict:
     if body.game is not None:
         CONFIG["stream"]["game"] = body.game
     save_config(CONFIG)
+    await _fanout_config()
 
     result: dict = {"ok": True, "title": CONFIG["stream"]["title"],
                     "game": CONFIG["stream"]["game"], "delivered": []}
@@ -525,15 +858,19 @@ async def set_stream_info(body: StreamInfoIn) -> dict:
         result["ok"] = False
         result["hint"] = (
             "Streamer.bot HTTP server not reachable on 127.0.0.1:7474. "
-            "In Streamer.bot: Servers/Clients -> HTTP Server -> Start. "
-            f"Then create an action named '{STREAMERBOT_ACTION}' that sets the "
-            "Twitch title/game (and YouTube title) from %title% and %game%."
+            "In Streamer.bot: Servers/Clients -> HTTP Server -> Start "
+            "(or set Settings -> HTTP Server -> Auto Start so it survives restarts). "
+            f"Then create an action named '{STREAMERBOT_ACTION}' containing: "
+            "Twitch -> Channel -> Set Title with %dashTitle%, and "
+            "Twitch -> Channel -> Set Game with %dashGame%. "
+            "Do NOT use %title% / %game% - those are Streamer.bot built-ins and "
+            "shadow the arguments we send."
         )
         return result
 
     payload = {
         "action": {"name": STREAMERBOT_ACTION},
-        "args": {"title": CONFIG["stream"]["title"], "game": CONFIG["stream"]["game"]},
+        "args": {"dashTitle": CONFIG["stream"]["title"], "dashGame": CONFIG["stream"]["game"]},
     }
     ok, info = await asyncio.to_thread(
         _post_json_sync, f"{STREAMERBOT_HTTP}/DoAction", payload
@@ -762,6 +1099,371 @@ async def poll_start(body: PollIn) -> dict:
 async def poll_end() -> dict:
     CHAT.end_poll()
     return {"ok": True, "results": CHAT.poll_results()}
+
+
+# ------------------------------------------------------------------ deadlock panel
+# A presentation layer only. Nothing here reads the game: no memory access, no
+# injection, no screen sampling. Values arrive from the dashboard or a local
+# caller and are pushed to the overlay.
+MAX_ITEMS = 12
+
+
+def _dl() -> dict:
+    state = CONFIG.setdefault("deadlock", {})
+    for field in ("boon", "souls", "spirit", "gun", "vitality",
+                  "kills", "assists", "damage", "damage_total", "damage_life",
+                  "damage_in"):
+        state.setdefault(field, 0)
+    state.setdefault("items", [])
+    state.setdefault("player_name", "")
+    state.setdefault("match_started", 0)
+    return state
+
+
+async def _fanout_config() -> None:
+    """Push the current config to every connected overlay.
+
+    Scenes show the live game/category, so a change made on the dashboard has to
+    reach already-open browser sources -- otherwise a scene keeps showing the
+    game it was loaded with until OBS refreshes it.
+    """
+    async with HUB._lock:
+        channels = list(HUB.overlays.keys())
+    for ch in channels:
+        try:
+            await HUB.to_overlays(ch, {"kind": "config", "config": CONFIG})
+        except Exception:  # noqa: BLE001
+            pass
+
+
+async def _dl_broadcast() -> None:
+    await HUB.to_overlays("deadlock", {"kind": "deadlock", "state": _dl(), "ts": time.time()})
+
+
+@app.post("/api/deadlock/grab")
+async def deadlock_grab() -> dict:
+    path = await grab_game_frame("manual")
+    return {"ok": bool(path), "path": path}
+
+
+@app.get("/api/deadlock/state")
+async def deadlock_state() -> dict:
+    return {"ok": True, "state": _dl()}
+
+
+DL_FIELDS = ("boon", "souls", "spirit", "gun", "vitality",
+             "kills", "assists", "damage")
+
+
+class DeadlockStatsIn(BaseModel):
+    boon: int | None = None
+    souls: int | None = None
+    spirit: int | None = None
+    gun: int | None = None
+    vitality: int | None = None
+    kills: int | None = None
+    assists: int | None = None
+    damage: int | None = None
+
+
+class DeadlockIncrementIn(BaseModel):
+    field: str
+    by: int = 1
+
+
+@app.post("/api/deadlock/state")
+async def deadlock_set(body: DeadlockStatsIn) -> dict:
+    state = _dl()
+    for field in DL_FIELDS:
+        value = getattr(body, field, None)
+        if value is not None:
+            state[field] = max(0, int(value))
+    # boon / souls are the only ones worth showing in config-driven places
+    save_config(CONFIG)
+    await _dl_broadcast()
+    return {"ok": True, "state": state}
+
+
+@app.post("/api/deadlock/increment")
+async def deadlock_increment(body: DeadlockIncrementIn) -> dict:
+    """Bump a stat -- this is the deck button path (kill, assist, ...)."""
+    if body.field not in DL_FIELDS:
+        raise HTTPException(400, f"field must be one of {', '.join(DL_FIELDS)}")
+    state = _dl()
+    state[body.field] = max(0, int(state.get(body.field, 0)) + int(body.by))
+    save_config(CONFIG)
+    await _dl_broadcast()
+    return {"ok": True, "field": body.field, "value": state[body.field], "state": state}
+
+
+class DeadlockItemIn(BaseModel):
+    name: str
+    icon: str | None = None
+
+
+@app.post("/api/deadlock/item")
+async def deadlock_add_item(body: DeadlockItemIn) -> dict:
+    state = _dl()
+    items = state["items"]
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(400, "item name required")
+    items.append({"name": name[:48], "icon": body.icon})
+    if len(items) > MAX_ITEMS:
+        state["items"] = items[-MAX_ITEMS:]
+    save_config(CONFIG)
+    await _dl_broadcast()
+    return {"ok": True, "items": state["items"]}
+
+
+@app.delete("/api/deadlock/item")
+async def deadlock_pop_item() -> dict:
+    state = _dl()
+    if state["items"]:
+        state["items"].pop()
+        save_config(CONFIG)
+        await _dl_broadcast()
+    return {"ok": True, "items": state["items"]}
+
+
+@app.post("/api/deadlock/reset")
+async def deadlock_reset() -> dict:
+    prev = _dl()
+    CONFIG["deadlock"] = {"boon": 0, "souls": 0, "spirit": 0, "gun": 0,
+                          "vitality": 0, "kills": 0, "assists": 0, "damage": 0,
+                          "damage_total": 0, "damage_life": 0, "damage_in": 0,
+                          "last_deaths": None,
+                          "items": [],
+                          # keep identity, start a fresh win/loss session now
+                          "account_id": prev.get("account_id", 0),
+                          "session_start": int(time.time()),
+                          "wins": 0, "losses": 0, "last_result": None}
+    save_config(CONFIG)
+    await _dl_broadcast()
+    return {"ok": True, "state": CONFIG["deadlock"]}
+
+
+# --- session win/loss via the public Deadlock API -------------------------
+# The game exposes nothing locally, so this uses deadlock-api.com's match
+# history. It is a read of PUBLIC match records -- no memory, no injection,
+# no screen sampling. Win is encoded as match_result == player_team (verified
+# against player_match_outcome across 732 matches).
+DEADLOCK_API = "https://api.deadlock-api.com"
+
+
+def _fetch_match_history(account_id: int) -> list[dict]:
+    import urllib.request
+
+    req = urllib.request.Request(
+        f"{DEADLOCK_API}/v1/players/{account_id}/match-history",
+        headers={"User-Agent": "dikgun-overlay/1.0", "Accept": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=25) as resp:
+        return json.loads(resp.read().decode())
+
+
+def _fetch_steam_profile(account_id: int) -> dict | None:
+    """Persona name from the Deadlock API (no Steam Web API key needed)."""
+    import urllib.request
+
+    req = urllib.request.Request(
+        f"{DEADLOCK_API}/v1/players/steam?account_ids={account_id}",
+        headers={"User-Agent": "dikgun-overlay/1.0", "Accept": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        data = json.loads(resp.read().decode())
+    return data[0] if isinstance(data, list) and data else None
+
+
+def _tally_session(history: list[dict], session_start: float) -> dict:
+    wins = losses = 0
+    last = None
+    for m in sorted(history, key=lambda x: x.get("start_time", 0)):
+        if float(m.get("start_time") or 0) < session_start:
+            continue
+        won = m.get("match_result") == m.get("player_team")
+        if won:
+            wins += 1
+        else:
+            losses += 1
+        last = {
+            "match_id": m.get("match_id"),
+            "won": won,
+            "kills": m.get("player_kills"),
+            "deaths": m.get("player_deaths"),
+            "assists": m.get("player_assists"),
+            "start_time": m.get("start_time"),
+        }
+    return {"wins": wins, "losses": losses, "last_result": last}
+
+
+async def dl_sync() -> dict:
+    state = _dl()
+    account_id = int(state.get("account_id") or 0)
+    if not account_id:
+        return {"ok": False, "error": "no account_id set"}
+    try:
+        history = await asyncio.to_thread(_fetch_match_history, account_id)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+
+    # The scoreboard shows the Steam persona name, so resolve it from the API
+    # rather than making anyone type it in.
+    if not state.get("player_name"):
+        try:
+            profile = await asyncio.to_thread(_fetch_steam_profile, account_id)
+            if profile and profile.get("personaname"):
+                state["player_name"] = profile["personaname"]
+        except Exception:  # noqa: BLE001
+            pass
+
+    start = float(state.get("session_start") or 0)
+    tally = _tally_session(history, start)
+    state.update(tally)
+    save_config(CONFIG)
+    await _dl_broadcast()
+    return {"ok": True, "state": state, "matches_total": len(history)}
+
+
+class DeadlockSyncIn(BaseModel):
+    account_id: int | None = None
+    reset_session: bool = False
+
+
+@app.post("/api/deadlock/sync")
+async def deadlock_sync(body: DeadlockSyncIn) -> dict:
+    state = _dl()
+    if body.account_id is not None:
+        state["account_id"] = int(body.account_id)
+    if body.reset_session or not state.get("session_start"):
+        state["session_start"] = int(time.time())
+    return await dl_sync()
+
+
+async def _dl_poll_loop() -> None:
+    """Refresh session win/loss in the background; match history only changes
+    when a game ends, so a slow poll is plenty."""
+    await asyncio.sleep(8)
+    while True:
+        try:
+            if int(_dl().get("account_id") or 0):
+                await dl_sync()
+        except Exception:  # noqa: BLE001
+            pass
+        await asyncio.sleep(120)
+
+
+# ------------------------------------------------------------------ overlay clear
+class ClearIn(BaseModel):
+    channel: str = "all"          # chat | topic | alerts | all
+
+
+@app.post("/api/overlay/clear")
+async def overlay_clear(body: ClearIn) -> dict:
+    """Wipe stale content from live overlays without reloading OBS sources.
+
+    Matters for the vertical canvases: their browser sources cannot be reached
+    through obs-websocket, so broadcasting is the only way to clear them.
+    """
+    channels = ["chat", "topic", "alerts"] if body.channel == "all" else [body.channel]
+    if "topic" in channels:
+        CONFIG["topic"] = {"label": "Now Playing", "text": ""}
+        save_config(CONFIG)
+
+    delivered: dict[str, int] = {}
+    for ch in channels:
+        delivered[ch] = await HUB.to_overlays(ch, {"kind": "clear", "channel": ch,
+                                                   "ts": time.time()})
+    # Overlay pages that were already open before the 'clear' handler existed will
+    # ignore that message, so also re-push config -- every overlay already knows
+    # how to apply it, and for topic an empty text hides the card.
+    for ch in channels:
+        await HUB.to_overlays(ch, {"kind": "config", "config": CONFIG})
+    return {"ok": True, "cleared": channels, "delivered": delivered}
+
+
+# ------------------------------------------------------------------ input overlay
+@app.get("/api/input/state")
+async def input_state() -> dict:
+    """Current held keys, used by the overlay to seed itself on load."""
+    return {"available": _INPUT is not None,
+            "pressed": _INPUT.snapshot() if _INPUT else {}}
+
+
+class InputSimIn(BaseModel):
+    key: str
+    down: bool = True
+
+
+@app.post("/api/input/simulate")
+async def input_simulate(body: InputSimIn) -> dict:
+    """Push a synthetic key event, for testing the overlay without a keyboard."""
+    await HUB.to_overlays("input", {"kind": "input", "type": "key",
+                                    "key": body.key, "down": body.down, "ts": time.time()})
+    return {"ok": True, "key": body.key, "down": body.down}
+
+
+# --------------------------------------------------------------- twitch catalog
+# Twitch's own web GQL endpoint. Needs no user token and no app registration, so
+# the dashboard can search categories with zero setup -- unlike Helix, which
+# would require a client id/secret and an app access token.
+# Trade-off: unofficial. If Twitch reshapes the schema, only this query changes.
+_GQL_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
+_GQL_URL = "https://gql.twitch.tv/gql"
+_CATEGORY_QUERY = """
+query SearchCategories($query: String!) {
+  searchFor(userQuery: $query, platform: "web", target: null) {
+    games { edges { item { ... on Game { id name displayName boxArtURL } } } }
+  }
+}
+"""
+
+
+def _category_search_sync(query: str, limit: int = 12) -> list[dict]:
+    import urllib.request
+
+    payload = json.dumps({
+        "operationName": "SearchCategories",
+        "variables": {"query": query},
+        "query": _CATEGORY_QUERY,
+    }).encode()
+    req = urllib.request.Request(
+        _GQL_URL, data=payload, method="POST",
+        headers={"Content-Type": "application/json", "Client-ID": _GQL_CLIENT_ID,
+                 "User-Agent": "Mozilla/5.0"},
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read().decode())
+
+    edges = (((data.get("data") or {}).get("searchFor") or {}).get("games") or {}).get("edges") or []
+    out: list[dict] = []
+    for edge in edges[:limit]:
+        item = (edge or {}).get("item") or {}
+        if not item.get("displayName"):
+            continue
+        art = (item.get("boxArtURL") or "")
+        art = art.replace("{width}", "72").replace("{height}", "96")
+        out.append({
+            "id": item.get("id"),
+            "name": item.get("name"),
+            "display": item.get("displayName"),
+            "boxArt": art,
+        })
+    return out
+
+
+@app.get("/api/twitch/categories")
+async def twitch_categories(q: str = "") -> dict:
+    """Search Twitch categories. The name returned is what Twitch itself calls it,
+    which is what makes the category actually land in the right bucket."""
+    q = (q or "").strip()
+    if len(q) < 2:
+        return {"ok": True, "query": q, "results": []}
+    try:
+        results = await asyncio.to_thread(_category_search_sync, q)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"category search failed: {exc}") from exc
+    return {"ok": True, "query": q, "results": results}
 
 
 # ------------------------------------------------------------------------ websocket
