@@ -32,3 +32,5 @@ overlay-server/clips_cache.json
 overlay-server/laughter_index.json
 overlay-server/laughter_scan.log
 overlay-server/kill_index.json
+overlay-server/marker_index.json
+overlay-server/.*.lock
