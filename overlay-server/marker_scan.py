@@ -61,6 +61,8 @@ def region_for(game: str, center: int):
     if cfg.is_file():
         try:
             r = json.loads(cfg.read_text(encoding="utf-8"))
+            global _REGION_MODE
+            _REGION_MODE = str(r.get("mode", "")).lower()
             return int(r["x"]), int(r["y"]), int(r["w"]), int(r["h"])
         except Exception:  # noqa: BLE001
             pass
@@ -71,6 +73,8 @@ def region_for(game: str, center: int):
 _MODEL = None
 _MASK_KIND = None
 _TEXT_CFG = None
+_REGION_MODE = ""
+_DUAL = None
 
 
 def load(game: str):
@@ -86,11 +90,18 @@ def load(game: str):
                   snowy HUD (measured: 56k white pixels in the crop, best
                   correlation 0.58 on the marker's own frame).
     """
-    global _MODEL, _MASK_KIND, _TEXT_CFG
+    global _MODEL, _MASK_KIND, _TEXT_CFG, _REGION_MODE
     import cv2
     import numpy as np
 
     d = TPL_DIR / game.lower()
+    _REGION_MODE = ""
+    cfg = d / "region.json"
+    if cfg.is_file():
+        try:
+            _REGION_MODE = str(json.loads(cfg.read_text(encoding="utf-8")).get("mode", "")).lower()
+        except Exception:  # noqa: BLE001
+            _REGION_MODE = ""
     text_cfg = d / "text.json"
     if text_cfg.is_file():
         try:
@@ -102,6 +113,13 @@ def load(game: str):
             raise SystemExit(f"bad text.json for {game}: {exc}")
 
     _TEXT_CFG = None
+    global _DUAL
+    _DUAL = None
+    tf = d / "text_mask.png"
+    if _REGION_MODE == "dual" and tf.is_file():
+        tm = cv2.imread(str(tf), cv2.IMREAD_GRAYSCALE)
+        _DUAL = (tm > 127).astype(np.uint8)
+        print(f"  marker '{game}' -> DUAL: icon + text box, both must match")
     mask = cv2.imread(str(template_path(game)), cv2.IMREAD_GRAYSCALE)
     tpl = (mask > 127).astype(np.uint8)
     _MODEL = tpl
@@ -158,6 +176,39 @@ def score_frame(frame, tpl, scales=(0.85, 1.0, 1.15, 1.3)):
 
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     h, s, v = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+
+    if _REGION_MODE == "dual":
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        hsv2 = hsv
+        v2, s2 = hsv2[:, :, 2], hsv2[:, :, 1]
+        wmask = ((v2 > 150) & (s2 < 90)).astype(np.uint8)
+        ti = cv2.cvtColor(tpl.astype(np.uint8) * 255, cv2.COLOR_GRAY2BGR)
+        ti = cv2.cvtColor(ti, cv2.COLOR_BGR2GRAY)
+        best_icon = best_box = 0.0
+        for sc in scales:
+            a = cv2.resize(ti, None, fx=sc, fy=sc, interpolation=cv2.INTER_LINEAR)
+            c = cv2.resize(_DUAL, None, fx=sc, fy=sc, interpolation=cv2.INTER_NEAREST)
+            if a.shape[0] < gray.shape[0] and a.shape[1] < gray.shape[1]:
+                best_icon = max(best_icon, float(cv2.matchTemplate(gray, a, cv2.TM_CCOEFF_NORMED).max()))
+            if c.shape[0] < wmask.shape[0] and c.shape[1] < wmask.shape[1] and c.sum() > 20:
+                best_box = max(best_box, float(cv2.matchTemplate(wmask, c, cv2.TM_CCOEFF_NORMED).max()))
+        # both signals must fire; return the weaker of the two so one alone cannot pass
+        return min(best_icon, best_box)
+
+    if _REGION_MODE == "gray":
+        # structure matching: pale icons on bright maps have no usable colour
+        # separation, but their shape/contrast is distinctive
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        top = 0.0
+        for sc in scales:
+            t = cv2.resize(cv2.cvtColor(cv2.cvtColor(tpl.astype(np.uint8) * 255, cv2.COLOR_GRAY2BGR),
+                                        cv2.COLOR_BGR2GRAY) if tpl.ndim == 2 else tpl,
+                           None, fx=sc, fy=sc, interpolation=cv2.INTER_LINEAR)
+            if t.shape[0] >= gray.shape[0] or t.shape[1] >= gray.shape[1]:
+                continue
+            r = cv2.matchTemplate(gray, t, cv2.TM_CCOEFF_NORMED)
+            top = max(top, float(r.max()))
+        return top
 
     if _MASK_KIND == "white":
         # bright and desaturated: white HUD text and box outlines

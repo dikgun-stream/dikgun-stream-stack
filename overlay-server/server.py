@@ -723,6 +723,19 @@ async def api_clip_highlights(source: str = "all", limit: int = 400) -> dict:
         sources.append(("laughter", load("laughter_index.json"), None))
     if want in ("all", "kills", "kill"):
         sources.append(("kill", load("kill_index.json"), None))
+    if want in ("all", "markers"):
+        # generic marker scan (Deadlock's red ring). Only high-confidence hits:
+        # the 2024 Deadlock clips peak ~0.93 while the 2025 ones peak ~0.60,
+        # i.e. the marker changed between versions, so a low bar admits noise.
+        markers = load("marker_index.json")
+        filtered = {"files": {}}
+        for rel, res in (markers.get("files") or {}).items():
+            if not isinstance(res, dict):
+                continue
+            if (res.get("peak") or 0) < 0.75:
+                continue
+            filtered["files"][rel] = res
+        sources.append(("marker", filtered, None))
     if want in ("all", "curated"):
         sources.append(("curated", load("curated_highlights.json"), None))
 
@@ -778,7 +791,7 @@ async def api_clip_highlights(source: str = "all", limit: int = 400) -> dict:
                     "title": meta["title"],
                     "start": round(start, 2),
                     "len": round(end - start, 2),
-                    "kills": seg.get("kills"),
+                    "kills": seg.get("kills") if label != "marker" else seg.get("hits"),
                     "laugh_at": seg.get("laugh_at"),
                     "peak": res.get("peak") or res.get("peak_score"),
                     "source": label,
