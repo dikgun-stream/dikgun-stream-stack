@@ -374,6 +374,22 @@ usable footage to calibrate against:
 Each game needs one confirmed kill frame to build a template from, then the
 scanner works the same way. Tarkov is deliberately out of scope.
 
+
+### Index safety
+
+Both scanners take a lock file and write their index atomically. Two scans
+running at once previously did load-modify-write on the same JSON, so whichever
+finished last silently dropped the other's entries -- that is how 4 R6 files and
+5 kill windows vanished once. A second scan now refuses to start while one holds
+the lock, and `--root` may point at a different folder without conflict.
+
+### Clip folders
+
+`C:\Users\JR\Videos` and `Q:\Game Clips` are both indexed, each served from its
+own mount. `Q:\Game Clips` is organised into per-game subfolders (BF6, R6,
+Deadlock, EFT) which map to display names via an alias table in `clips.py` --
+without it every clip in that folder is labelled "Game Clips" on screen.
+
 ### Playing them
 
 `/api/clips/highlights?source=laughter` returns playable windows

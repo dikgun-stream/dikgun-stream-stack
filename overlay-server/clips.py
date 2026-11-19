@@ -32,6 +32,11 @@ _NON_GAME = {
 
 # Canonical display names for the messier folders.
 _GAME_ALIASES = {
+    # short folder names used in Q:\Game Clips
+    "bf6": "Battlefield 6",
+    "r6": "Rainbow Six Siege",
+    "deadlock": "Deadlock",
+    "eft": "Escape from Tarkov",
     "r6siege": "Rainbow Six Siege",
     "tom clancy's rainbow six  siege": "Rainbow Six Siege",
     "tom clancy's rainbow six siege": "Rainbow Six Siege",

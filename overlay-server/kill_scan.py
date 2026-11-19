@@ -31,6 +31,8 @@ import os
 import subprocess
 import sys
 import time
+
+import scan_lock
 from pathlib import Path
 
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
@@ -261,7 +263,7 @@ def load_index() -> dict:
 
 
 def save_index(idx: dict) -> None:
-    INDEX_PATH.write_text(json.dumps(idx, indent=1), encoding="utf-8")
+    scan_lock.atomic_write_json(INDEX_PATH, idx)
 
 
 def main(argv=None) -> int:
@@ -314,6 +316,8 @@ def main(argv=None) -> int:
         ap.print_help()
         return 1
 
+    if not scan_lock.acquire(ROOT, "kill"):
+        return 1
     idx = load_index()
     todo = [p for p in files
             if args.rescan or str(p.relative_to(root)) not in idx["files"]]
@@ -332,6 +336,7 @@ def main(argv=None) -> int:
 
     total = sum(v.get("kills", 0) for v in idx["files"].values() if isinstance(v, dict))
     wins = sum(len(v.get("segments") or []) for v in idx["files"].values() if isinstance(v, dict))
+    scan_lock.release(ROOT, "kill")
     print(f"done. {total} kills -> {wins} windows across {len(idx['files'])} files")
     return 0
 

@@ -31,12 +31,15 @@ import tempfile
 import wave
 from pathlib import Path
 
+import scan_lock
+
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
 # YAMNet operates on 0.48 s windows
 WINDOW = 0.48
 LAUGH_KEYS = ("laughter", "giggle", "snicker", "chuckle", "chortle")
 
+ROOT = Path(__file__).parent
 INDEX_PATH = Path(__file__).with_name("laughter_index.json")
 MODEL_DIR = Path(__file__).parent.parent / "obs-build" / "yamnet"
 
@@ -210,7 +213,7 @@ def load_index() -> dict:
 
 
 def save_index(idx: dict) -> None:
-    INDEX_PATH.write_text(json.dumps(idx, indent=1), encoding="utf-8")
+    scan_lock.atomic_write_json(INDEX_PATH, idx)
 
 
 def main(argv=None) -> int:
@@ -256,6 +259,8 @@ def main(argv=None) -> int:
         ap.print_help()
         return 1
 
+    if not scan_lock.acquire(ROOT, "laughter"):
+        return 1
     idx = load_index()
     todo = [p for p in files
             if args.rescan or str(p.relative_to(root)) not in idx["files"]]
@@ -271,6 +276,7 @@ def main(argv=None) -> int:
         save_index(idx)
 
     total = sum(len(v.get("segments") or []) for v in idx["files"].values())
+    scan_lock.release(ROOT, "laughter")
     print(f"done. {total} laughter windows across {len(idx['files'])} files")
     return 0
 
