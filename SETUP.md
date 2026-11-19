@@ -263,3 +263,60 @@ because it is a background service and not something you watch.
 
 If you genuinely want it closed during a stream, comment out the
 `Start-IfNeeded -Label 'Streamer.bot'` line in `streamer-mode/Streamer-Mode.ps1`.
+
+## Audio tracks
+
+Recordings are split into three tracks so the parts can be separated after the
+fact. This matters for clip detection: a "did I get a kill" detector should
+listen to game audio, not to you shouting.
+
+| Track | Content | Sources |
+|---|---|---|
+| 1 | Game / desktop audio | `Desktop Audio`, all game and window capture sources |
+| 2 | Microphone | `Mic/Aux` |
+| 3 | Overlays and clips | all browser sources, including the clip player |
+
+Configuration lives in two places:
+
+- `basic.ini` -> `RecTracks=7` (bitmask: track 1 + 2 + 3 written to every file)
+- per source -> `mixers` bitmask (track 1 = 1, track 2 = 2, track 3 = 4)
+
+### Verifying
+
+Record a few seconds and probe the result:
+
+```powershell
+ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 <file>
+# expect 3 lines
+```
+
+Or check loudness per track, which proves they hold different content:
+
+```powershell
+ffmpeg -i <file> -map 0:a:0 -af volumedetect -f null NUL   # game
+ffmpeg -i <file> -map 0:a:1 -af volumedetect -f null NUL   # mic
+```
+
+A measured test on this machine: track 1 mean -45.7 dB (game audio), track 2 and
+track 3 at -91 dB (digital silence -- mic muted, no clips playing).
+
+### Limits
+
+- **Existing recordings cannot be split.** Everything before this change is a
+  single mixed track. Split capture only affects new recordings.
+- `RecTracks=7` triples the audio encoding (three AAC tracks at 160 kbps each).
+  Negligible next to video, but it is not free.
+
+### If OBS opens with "Crash Detected"
+
+That dialog is OBS's safe-mode prompt, not a real crash in this case: it appears
+after any unclean shutdown, including a forced kill. OBS marks this with a
+sentinel **directory** at `%APPDATA%\obs-studio\.sentinel`; deleting it skips
+the prompt and starts normally.
+
+```powershell
+[System.IO.Directory]::Delete("$env:APPDATA\obs-studio\.sentinel", $true)
+```
+
+Close OBS gracefully when possible -- the sentinel is only cleared on a clean
+exit.
