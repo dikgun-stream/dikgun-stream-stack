@@ -171,6 +171,7 @@
   let pos = 0;
   let stopAt = 0;
   let deadline = 0;
+  let sourceLabel = 'CLIP';
 
   function encPath(rel) {
     return '/videos/' + rel.split('/').map(encodeURIComponent).join('/');
@@ -252,17 +253,33 @@
 
   async function load() {
     try {
-      const q = onlyGame ? `?game=${encodeURIComponent(onlyGame)}` : '';
-      const r = await fetch(`/api/clips${q}`, { cache: 'no-store' });
-      const data = await r.json();
-      clips = data.clips || [];
+      const source = params.get('source') || '';
+      let url = `/api/clips${onlyGame ? `?game=${encodeURIComponent(onlyGame)}` : ''}`;
+      let data;
+      if (source) {
+        // highlight mode: windows inside full recordings, not whole files
+        url = `/api/clips/highlights?source=${encodeURIComponent(source)}`;
+        data = await (await fetch(url, { cache: 'no-store' })).json();
+        clips = data.highlights || [];
+        if (!clips.length) {
+          // the laughter scan is a long job and may not have reached much yet;
+          // falling back keeps the scene useful instead of showing an empty frame
+          data = await (await fetch(`/api/clips${onlyGame ? `?game=${encodeURIComponent(onlyGame)}` : ''}`,
+                                    { cache: 'no-store' })).json();
+          clips = data.clips || [];
+          if (clips.length) sourceLabel = 'ALL CLIPS';
+        }
+      } else {
+        data = await (await fetch(url, { cache: 'no-store' })).json();
+        clips = data.clips || [];
+      }
       if (!clips.length) {
-        msgEl.textContent = data.available === false ? 'CLIP FOLDER MISSING' : 'NO CLIPS FOUND';
+        msgEl.textContent = data.available === false ? 'CLIP FOLDER MISSING'
+          : (source ? 'NO HIGHLIGHTS YET' : 'NO CLIPS FOUND');
         msgEl.classList.remove('hide');
         return;
       }
       order = shuffle ? shuffleInto(clips) : clips.slice();
-      // start on the newest clip for order mode, random for shuffle
       play(0);
     } catch (e) {
       msgEl.textContent = 'CLIP API UNREACHABLE';

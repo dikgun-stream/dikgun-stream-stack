@@ -13,6 +13,33 @@
      Vertical  : inverted -- type stacked, numeral in the upper third
                  (thumb-safe), steeper axis, bottom reserved for platform UI. */
 
+  /* ---- optional clip footage in the frame -------------------------------
+     ?clips=1 cycles recordings from the clip library through the framed inset
+     and labels the game they came from. Deliberately an inset rather than a
+     full-bleed background: the countdown stays the focal point, and one video
+     element costs far less in OBS than a full-screen one. */
+  #clipframe {
+    position: absolute; z-index: 6; display: none;
+    inset: 4.2vmin 4.2vmin auto auto;
+    width: 30vmin; height: 17vmin;
+    border: var(--rule-mid) solid var(--ink);
+    overflow: hidden;
+    background: var(--ink);
+  }
+  body.has-clips #clipframe { display: block; }
+  #clipframe video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  #clipframe .cap {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    background: var(--ink); color: var(--paper-hi);
+    font-family: var(--mono); font-size: 1.05vmin; letter-spacing: .22em;
+    padding: 3px 6px; text-transform: uppercase;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .v #clipframe {
+    inset: auto 4vmin auto auto;
+    top: 74vmin; width: 40vmin; height: 23vmin;
+  }
+
   .axis.sweep {
     top: 54%; height: 46vmin;
     animation: sweep-x 19s linear infinite;
@@ -191,6 +218,16 @@
   <div class="mark"></div>
   <div class="axis band-red sweep"></div>
 
+  <div id="clipframe">
+    <video id="insetclip" muted playsinline preload="auto"></video>
+    <div class="cap" id="clipcap">-</div>
+  </div>
+
+  <div id="clipframe">
+    <video id="insetclip" muted playsinline preload="auto"></video>
+    <div class="cap" id="clipcap">-</div>
+  </div>
+
   <div id="headline"><span class="ln">Starting</span><span class="ln">Soon</span></div>
   <div id="subline" data-subline>Grab a drink.</div>
 
@@ -225,6 +262,7 @@
 
 <script src="/assets/scene.js"></script>
 <script>
+  const params  = new URLSearchParams(location.search);
   const timerEl = document.getElementById('timer');
   const barEl   = document.getElementById('bar');
   const cd = Scene.makeCountdown(timerEl, barEl);
@@ -250,6 +288,56 @@
     if (!type) return;
     document.body.dataset.lastEvent = type;
   });
+
+  // ---- optional clip inset (?clips=1) ----------------------------------
+  if (params.get('clips') === '1') {
+    document.body.classList.add('has-clips');
+    const v = document.getElementById('insetclip');
+    const cap = document.getElementById('clipcap');
+    let pool = [];
+    let idx = 0;
+    let deadline = 0;
+
+    async function loadPool() {
+      try {
+        const r = await fetch('/api/clips', { cache: 'no-store' });
+        const d = await r.json();
+        pool = (d.clips || []).slice();
+        for (let i = pool.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [pool[i], pool[j]] = [pool[j], pool[i]];
+        }
+        if (d.highlights && d.highlights.length) {
+          // when the highlight scan has run, prefer those windows
+          pool = d.highlights;
+        }
+      } catch { pool = []; }
+    }
+
+    function playNext() {
+      if (!pool.length) { cap.textContent = 'NO CLIPS'; return; }
+      const c = pool[idx++ % pool.length];
+      cap.textContent = (c.game || '').toUpperCase();
+      v.src = '/videos/' + String(c.rel).split('/').map(encodeURIComponent).join('/');
+      const seek = () => {
+        const dur = Number.isFinite(v.duration) ? v.duration : 0;
+        const from = Number(c.start) || dur * 0.12;
+        if (dur > 30) { try { v.currentTime = from + Math.random() * 8; } catch { /* noop */ } }
+        deadline = Date.now() + (Number(c.len) || 30) * 1000;
+      };
+      if (v.readyState >= 1) seek();
+      else v.addEventListener('loadedmetadata', seek, { once: true });
+      v.play().catch(() => {});
+    }
+
+    v.addEventListener('ended', playNext);
+    setInterval(() => {
+      if (deadline && Date.now() > deadline) { deadline = 0; playNext(); }
+    }, 1000);
+
+    loadPool().then(playNext);
+    setInterval(loadPool, 10 * 60 * 1000);
+  }
 </script>
 </body>
 </html>

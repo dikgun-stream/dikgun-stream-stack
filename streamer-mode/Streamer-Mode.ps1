@@ -394,9 +394,13 @@ foreach ($b in $browserJobs) {
 }
 
 if ($Mode -eq 'dev') {
-    Start-IfNeeded -Label 'Streamer.bot' -Exe $SB_EXE -Predicate $sbPred
     Start-IfNeeded -Label 'DeepSeek Harness' -Exe $DSH_EXE -Predicate $dshPred
 }
+
+# Streamer.bot runs in BOTH modes: it sources the follow/sub alerts, so leaving
+# it closed in stream mode silently breaks them. It is launched here but only
+# tiled in dev mode -- in stream mode its window is minimised instead.
+Start-IfNeeded -Label 'Streamer.bot' -Exe $SB_EXE -Predicate $sbPred
 
 # --- 4. tile
 $obsH = Wait-WindowHandle -Predicate $obsPred -TimeoutSec 45
@@ -422,8 +426,10 @@ function Get-BrowserWindow([string]$profileLeaf) {
 
 $dashH = Get-BrowserWindow 'dashboard'
 $chatH = Get-BrowserWindow 'chat'
-$sbH = if ($Mode -eq 'dev') { Wait-WindowHandle -Predicate $sbPred -TimeoutSec 30 } else { [IntPtr]::Zero }
-$dshH = if ($Mode -eq 'dev') { Wait-WindowHandle -Predicate $dshPred -TimeoutSec 30 } else { [IntPtr]::Zero }
+# A dry run never launches it, so do not sit waiting for a window that will not
+# appear -- that added 30s of dead time to every dry run.
+$sbH = if ($DryRun) { [IntPtr]::Zero } else { Wait-WindowHandle -Predicate $sbPred -TimeoutSec 30 }
+$dshH = if ($Mode -eq 'dev' -and -not $DryRun) { Wait-WindowHandle -Predicate $dshPred -TimeoutSec 30 } else { [IntPtr]::Zero }
 
 # Measured minimum window sizes on this machine (probe: request 300x300, read back).
 # Tiles smaller than these are silently clamped by the app and then overlap.
@@ -455,6 +461,11 @@ if ($Mode -eq 'dev') {
     # Dev tools go on the primary display; dev mode does not hide anything.
     Place-Window $sbH  $ZOWIE.X                $ZOWIE.Y 960 640 'Streamer.bot'
     Place-Window $dshH ($ZOWIE.X + 960)        $ZOWIE.Y 900 640 'DeepSeek Harness'
+} elseif ($sbH -ne [IntPtr]::Zero) {
+    # Stream mode: Streamer.bot is a background service, not something you
+    # watch. Minimise so it cannot sit over the layout.
+    if ($DryRun) { Write-Log 'DRY   would minimise Streamer.bot' }
+    else { [void][W]::ShowWindow($sbH, 6); Write-Log 'MIN   Streamer.bot' }
 }
 
 # --- 4b. close everything that is not part of this mode

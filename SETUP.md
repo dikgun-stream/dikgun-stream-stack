@@ -251,3 +251,15 @@ The recordings are full OBS DVR sessions, not trimmed clips — most are 300 MB 
 3 GB. Playing from 0 lands on a menu or the previous round, so the player jumps
 to `start` (default 12%) plus a random jitter, plays `len` seconds, then
 advances. Set `start=0&len=0` to play whole files end to end.
+
+## Streamer.bot in stream mode
+
+Stream mode now launches Streamer.bot as well. It sources the follow and sub
+alerts, so leaving it closed silently breaks them -- earlier versions only
+started it in `-Mode dev`, which meant the alerts died the moment you went live.
+
+It is still only *tiled* in dev mode. In stream mode the window is minimised,
+because it is a background service and not something you watch.
+
+If you genuinely want it closed during a stream, comment out the
+`Start-IfNeeded -Label 'Streamer.bot'` line in `streamer-mode/Streamer-Mode.ps1`.

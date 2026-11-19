@@ -666,6 +666,58 @@ async def api_clips(game: str | None = None, limit: int = 400) -> dict:
     }
 
 
+@app.get("/api/clips/highlights")
+async def api_clip_highlights(source: str = "laughter", limit: int = 300) -> dict:
+    """Playable highlight windows, currently from the laughter scan.
+
+    Each entry is a window inside a full recording: the player seeks to `start`
+    and plays for `len` seconds. Records are never cut on disk -- the source
+    files are hundreds of MB to several GB and copying them is not worth it.
+    """
+    index_path = Path(__file__).with_name("laughter_index.json")
+    data: dict = {}
+    if index_path.is_file():
+        try:
+            data = json.loads(index_path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            data = {}
+
+    clips = await asyncio.to_thread(clip_lib.scan, CLIPS_ROOT, CLIPS_CACHE)
+    by_rel = {c["rel"]: c for c in clips}
+
+    out: list[dict] = []
+    for rel, res in (data.get("files") or {}).items():
+        meta = by_rel.get(rel)
+        if not meta or not isinstance(res, dict) or not res.get("ok"):
+            continue
+        for seg in res.get("segments") or []:
+            try:
+                start = float(seg["start"])
+                end = float(seg["end"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if end - start < 5:
+                continue
+            out.append({
+                "rel": rel,
+                "game": meta["game"],
+                "title": meta["title"],
+                "start": round(start, 2),
+                "len": round(end - start, 2),
+                "laugh_at": seg.get("laugh_at"),
+                "peak": res.get("peak"),
+                "source": source,
+            })
+
+    out.sort(key=lambda x: -(x.get("laugh_at") or 0))
+    return {
+        "count": len(out),
+        "source": source,
+        "scanned": len(data.get("files") or {}),
+        "highlights": out[: max(1, limit)],
+    }
+
+
 @app.get("/api/config")
 async def get_config() -> dict:
     return CONFIG

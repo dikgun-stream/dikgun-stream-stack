@@ -245,3 +245,56 @@ OBS's own plugin config at runtime rather than storing it.
 `streamer-mode/assets/eft_a.png` is a fan-hosted Escape from Tarkov wordmark
 (CC BY-NC). It is fine for personal key art but should not be redistributed.
 `dl_logo.png` is the official Deadlock logo from Steam's CDN.
+
+## Laughter highlights
+
+`overlay-server/laughter_scan.py` finds the funny bits without hand-picking.
+Detection is a real audio-tagging model -- YAMNet, trained on Google's AudioSet
+ontology -- not a hand-rolled heuristic. It scores 521 sound classes per 0.48s
+window and reads the laughter family (Laughter / Giggle / Snicker / Chuckle).
+
+When laughter is detected the tool emits a **three-minute window** around it
+(default +/- 90s). Overlapping windows are merged, so three laughs 30s apart
+produce one window rather than three identical ones all starting at zero.
+
+### Setup (one time)
+
+```powershell
+pip install tensorflow
+
+# YAMNet model, ~14 MB
+mkdir obs-build\yamnet
+curl -L "https://tfhub.dev/google/yamnet/1?tf-hub-format=compressed" -o obs-build\yamnet\1.tar.gz
+tar -xzf obs-build\yamnet\1.tar.gz -C obs-build\yamnet
+```
+
+### Running it
+
+```powershell
+cd overlay-server
+python laughter_scan.py --list                        # see files and durations
+python laughter_scan.py --one <file>                  # single file, verbose scores
+python laughter_scan.py --all --threshold 0.05        # scan everything
+```
+
+The scan is incremental: `laughter_index.json` (gitignored) records what has
+been done, and already-scanned files are skipped, so it is safe to stop and
+resume. Plan for an overnight run on 100 GB of source.
+
+### Measured behaviour
+
+On this library the scores separate cleanly. A solo Rainbow Six recording peaked
+at **0.004** laughter probability -- no laughter, correctly reported as none.
+A co-op R.E.P.O. recording peaked at **0.58** and produced 7 usable windows
+across the library so far.
+
+### Playing them
+
+`/api/clips/highlights?source=laughter` returns playable windows
+(`rel`, `game`, `start`, `len`). The clip scenes point at
+`/overlay/clips?source=laughter`, and the player falls back to the full clip
+list automatically when no highlights exist yet -- the scan runs for hours, so an
+empty index should not mean an empty scene.
+
+Nothing is cut on disk. These are windows into the source recordings, because
+copying hundreds of GB of clips is not worth it -- `<video>` seeks instead.
