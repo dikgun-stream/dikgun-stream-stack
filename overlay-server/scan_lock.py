@@ -54,15 +54,36 @@ def release(directory: Path, name: str) -> None:
 
 
 def _alive(pid: int) -> bool:
+    """True if the process still exists.
+
+    os.kill(pid, 0) does not work as a liveness probe on Windows -- it raises
+    for processes that are perfectly alive, and this function used to treat any
+    exception as "alive", so a lock left by a killed scan blocked every later
+    scan until someone deleted the file by hand.
+    """
     if pid <= 0:
         return False
+    if os.name == "nt":
+        import ctypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        k32 = ctypes.windll.kernel32
+        handle = k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            if not k32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return False
+            return code.value == STILL_ACTIVE
+        finally:
+            k32.CloseHandle(handle)
     try:
         os.kill(pid, 0)
         return True
-    except (OSError, AttributeError):
-        # on Windows os.kill(pid, 0) is unreliable; fall back to tasklist-free
-        # heuristic: treat a very old lock as stale via the age check above
-        return True
+    except OSError:
+        return False
 
 
 def atomic_write_json(path: Path, data) -> None:

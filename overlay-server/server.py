@@ -554,6 +554,78 @@ async def lifespan(app: FastAPI):
                 pass
 
 
+
+
+# --------------------------------------------------------------------- checklists
+# Pre-flight and post-flight lists. Deliberately exhaustive: the cost of reading
+# a few extra lines is nothing next to going live with the wrong game selected
+# or a bank tab on the second monitor.
+CHECKLISTS_DEFAULT = {
+    "startup": [
+        "Dashboard category set - this sets Twitch AND YouTube",
+        "Stream title set",
+        "Scene collection is DikGun",
+        "Horizontal scene matches the game (GAME_*)",
+        "Vertical canvas scene matches the game (V_GAME_*)",
+        "Game capture shows the game, not a black screen",
+        "Camera framing ok - nothing embarrassing behind me",
+        "Mic unmuted and levels moving",
+        "Desktop/game audio audible in the mixer",
+        "Recording tracks correct: game=1, mic=2, overlays=3",
+        "Streamer.bot running (alerts will not fire without it)",
+        "Chat overlay connected and scrolling",
+        "Clip player has content (Starting Soon shows footage)",
+        "Windows Focus Assist / Do Not Disturb on",
+        "Discord set to Do Not Disturb, DMs hidden from capture",
+        "Phone silenced",
+        "Closed: bank, email, personal tabs, private Discord channels",
+        "Second monitor checked for anything that would show on stream",
+        "Twitch output armed",
+        "YouTube horizontal output armed",
+        "YouTube vertical second stream key set (Encoder mode)",
+        "Follower/sub goal values current",
+        "BRB and Ending scenes ready",
+    ],
+    "shutdown": [
+        "Switched to SHOW_Ending BEFORE stopping (so the VOD has an outro)",
+        "Stopped the stream on Twitch",
+        "Stopped the YouTube horizontal output",
+        "Stopped the YouTube vertical output",
+        "Stopped recording",
+        "Mic muted",
+        "Camera off",
+        "Game closed",
+        "Streamer.bot: no actions left running",
+        "OBS closed gracefully (do not kill it - leaves a crash sentinel)",
+        "Stream Deck / Stream Dock closed",
+        "Ran restore to un-tile windows",
+        "Checked the VOD is processing on Twitch",
+        "Saved/exported any clips worth keeping",
+        "Dashboard reset: title back to default",
+        "Deadlock state cleared (K/D/A, items) ready for next session",
+        "No private windows left open during the stream",
+        "Deleting any accidental personal info captured on screen",
+    ],
+}
+
+
+def _checklists() -> dict:
+    """Ensure the checklist state exists and is well formed."""
+    lists = CONFIG.setdefault("checklists", {})
+    for key, defaults in CHECKLISTS_DEFAULT.items():
+        current = lists.get(key)
+        if not isinstance(current, list) or not current:
+            lists[key] = [{"id": f"{key}-{i}", "text": t, "done": False}
+                          for i, t in enumerate(defaults)]
+            continue
+        # keep stored "done" flags, but adopt any new default items
+        have = {item.get("text") for item in current if isinstance(item, dict)}
+        for i, t in enumerate(defaults):
+            if t not in have:
+                current.append({"id": f"{key}-new-{i}", "text": t, "done": False})
+    return lists
+
+
 app = FastAPI(title="DikGun overlays", lifespan=lifespan)
 
 # Item card art for the tower, served straight from the web root.
@@ -808,6 +880,47 @@ async def api_clip_highlights(source: str = "all", limit: int = 400) -> dict:
         "bySource": by_source,
         "highlights": out[: max(1, limit)],
     }
+
+
+
+
+@app.get("/api/checklists")
+async def get_checklists() -> dict:
+    lists = _checklists()
+    summary = {}
+    for key, items in lists.items():
+        done = sum(1 for i in items if i.get("done"))
+        summary[key] = {"done": done, "total": len(items)}
+    return {"lists": lists, "summary": summary}
+
+
+@app.post("/api/checklists/toggle")
+async def toggle_checklist(body: dict) -> dict:
+    """body: {"list": "startup", "id": "startup-3", "done": true}"""
+    key = str(body.get("list", ""))
+    item_id = str(body.get("id", ""))
+    lists = _checklists()
+    if key not in lists:
+        raise HTTPException(400, f"unknown list '{key}'")
+    for item in lists[key]:
+        if item.get("id") == item_id:
+            item["done"] = bool(body.get("done", not item.get("done")))
+            save_config(CONFIG)
+            return {"ok": True, "list": key, "id": item_id, "done": item["done"]}
+    raise HTTPException(404, f"no item '{item_id}' in '{key}'")
+
+
+@app.post("/api/checklists/reset")
+async def reset_checklist(body: dict) -> dict:
+    """body: {"list": "startup"} - unticks everything for the next session."""
+    key = str(body.get("list", ""))
+    lists = _checklists()
+    if key not in lists:
+        raise HTTPException(400, f"unknown list '{key}'")
+    for item in lists[key]:
+        item["done"] = False
+    save_config(CONFIG)
+    return {"ok": True, "list": key, "count": len(lists[key])}
 
 
 @app.get("/api/config")

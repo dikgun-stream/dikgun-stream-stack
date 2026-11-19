@@ -170,7 +170,7 @@ def _tesseract():
     return _TESSERACT
 
 
-def ocr_hit(frame) -> float:
+def ocr_hit(frame, thorough: bool = False) -> float:
     """Return 1.0 if the configured word is readable in this frame."""
     import cv2
     import pytesseract
@@ -187,11 +187,14 @@ def ocr_hit(frame) -> float:
         # two passes only. Twelve combinations took 3.3s per frame, which is
         # hours per folder; these two are the ones that actually read the text
         # on the verified frames.
-        passes = [
-            (cv2.resize(cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)[1],
-                        None, fx=2.0, fy=2.0, interpolation=cv2.INTER_NEAREST), 6),
-            (cv2.resize(gray, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC), 11),
-        ]
+        # One pass is ~0.1s; the second (fx3, psm11) costs 4x more and only
+        # earns its keep on frames the cheap pass could not read. So the fast
+        # stage uses pass 1 and the slow stage adds pass 2.
+        passes = [(cv2.resize(a, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_NEAREST), 6)
+                  for a in [cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)[1]]]
+        if thorough:
+            passes.append((cv2.resize(gray, None, fx=3.0, fy=3.0,
+                                      interpolation=cv2.INTER_CUBIC), 11))
         for img, psm in passes:
             txt = pytesseract.image_to_string(
                 Image.fromarray(img), config=f"--psm {psm}").upper().replace("|", " ")
@@ -347,12 +350,13 @@ def frames(video: Path, fps: int, size: int, region=None):
 
 
 def scan_file(video: Path, game: str, threshold: float, fps: int,
-              center: int, pad: float, min_gap: float, verbose=False) -> dict:
+              center: int, pad: float, min_gap: float, verbose=False,
+              thorough: bool = False) -> dict:
     tpl = load(game)
     region = region_for(game, center)
     times, peak, nf = [], 0.0, 0
     for fr in frames(video, fps, center, region):
-        sc = ocr_hit(fr) if _TEXT_CFG else score_frame(fr, tpl)
+        sc = ocr_hit(fr, thorough=thorough) if _TEXT_CFG else score_frame(fr, tpl)
         peak = max(peak, sc)
         if sc >= threshold:
             times.append(nf / fps)
@@ -405,6 +409,9 @@ def main(argv=None) -> int:
     ap.add_argument("--center", type=int, default=520, help="centre box size in px")
     ap.add_argument("--pad", type=float, default=18.0)
     ap.add_argument("--min-gap", type=float, default=8.0)
+    ap.add_argument("--stage", choices=("fast", "slow"), default="slow",
+                    help="fast = one cheap OCR pass at low fps to find candidates; "
+                         "slow = all passes to confirm them")
     ap.add_argument("--one", help="scan a single file")
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--list", action="store_true")
@@ -415,7 +422,8 @@ def main(argv=None) -> int:
         t = Path(args.one)
         print(f"scanning {t.name} with template '{args.game}'")
         res = scan_file(t, args.game, args.threshold, args.fps, args.center,
-                        args.pad, args.min_gap, verbose=True)
+                        args.pad, args.min_gap, verbose=True,
+                        thorough=(args.stage == "slow"))
         print(json.dumps(res, indent=1))
         return 0
 
@@ -447,7 +455,7 @@ def main(argv=None) -> int:
         rel = str(p.relative_to(root)).replace("\\", "/")
         print(f"[{i}/{len(todo)}] {rel}", flush=True)
         res = scan_file(p, args.game, args.threshold, args.fps, args.center,
-                        args.pad, args.min_gap)
+                        args.pad, args.min_gap, thorough=(args.stage == "slow"))
         idx["files"][rel] = res
         if res.get("hits"):
             print(f"    {res['hits']} hit(s), {len(res['segments'])} window(s)", flush=True)

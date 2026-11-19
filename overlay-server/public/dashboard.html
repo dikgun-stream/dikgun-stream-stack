@@ -75,6 +75,24 @@
   a{color:var(--blue)}
   .kv{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #182029;font-size:12px}
   .kv b{font-weight:600}
+
+    /* ---- checklists -------------------------------------------------- */
+    .chk-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+    .chk-progress { font-variant-numeric: tabular-nums; font-size:12px; padding:3px 9px;
+                    border-radius:999px; background:rgba(255,255,255,.07); color:#8fa3b8; }
+    .chk-progress.all { background:rgba(74,222,128,.16); color:#4ade80; }
+    .chk-list { display:flex; flex-direction:column; gap:2px; max-height:62vh; overflow:auto; }
+    .chk-item { display:flex; gap:9px; align-items:flex-start; padding:6px 8px; border-radius:8px;
+                cursor:pointer; line-height:1.35; font-size:12.5px; color:#c8d6e5;
+                text-transform:none; letter-spacing:normal; margin-bottom:0; }
+    .chk-item:hover { background:rgba(255,255,255,.05); }
+    .chk-item input { width:auto; flex:0 0 auto; margin:2px 0 0; padding:0;
+                      accent-color:#4ade80; cursor:pointer; }
+    .chk-item.done { color:#5d7186; }
+    .chk-item.done .chk-text { text-decoration:line-through; }
+    .chk-item.done .chk-text::after { content:' \2713'; color:#4ade80; font-weight:700; }
+    .chk-danger .chk-item { border-left:2px solid rgba(248,113,113,.45); }
+
 </style>
 </head>
 <body>
@@ -89,7 +107,8 @@
 </header>
 
 <nav>
-  <button class="active" data-view="test">Test</button>
+  <button class="active" data-view="checklists">Checklists</button>
+  <button data-view="test">Test</button>
   <button data-view="overlays">Overlays</button>
   <button data-view="obs">OBS</button>
   <button data-view="admin">Admin</button>
@@ -97,8 +116,37 @@
 </nav>
 
 <main>
+  <!-- =========================== CHECKLISTS =========================== -->
+  <section class="view active" id="view-checklists">
+    <div class="cols">
+      <div class="panel">
+        <div class="chk-head">
+          <h2 style="margin:0">Before going live</h2>
+          <span class="chk-progress" id="chkStartupCount">0 / 0</span>
+        </div>
+        <div class="chk-list" id="chkStartup"></div>
+        <div class="row" style="margin-top:12px">
+          <button data-reset="startup">Reset for next stream</button>
+        </div>
+        <div class="hint">Ticks are saved, so this survives a refresh.</div>
+      </div>
+
+      <div class="panel chk-danger">
+        <div class="chk-head">
+          <h2 style="margin:0">After stopping</h2>
+          <span class="chk-progress" id="chkShutdownCount">0 / 0</span>
+        </div>
+        <div class="chk-list" id="chkShutdown"></div>
+        <div class="row" style="margin-top:12px">
+          <button data-reset="shutdown">Reset for next stream</button>
+        </div>
+        <div class="hint">Run this before you walk away - leaks are embarrassing.</div>
+      </div>
+    </div>
+  </section>
+
   <!-- ============================ TEST ============================ -->
-  <section class="view active" id="view-test">
+  <section class="view" id="view-test">
     <div class="cols">
       <div class="panel">
         <h2>Fire an event</h2>
@@ -392,6 +440,68 @@ window.addEventListener('resize', scalePreviews);
 scalePreviews();
 
 // ------------------------------------------------------------- status
+
+// ---- checklists ---------------------------------------------------
+const CHK = { startup: [], shutdown: [] };
+
+function renderChk(key) {
+  const host = document.getElementById('chk' + key.charAt(0).toUpperCase() + key.slice(1));
+  if (!host) return;
+  host.innerHTML = '';
+  for (const item of CHK[key]) {
+    const lab = document.createElement('label');
+    lab.className = 'chk-item' + (item.done ? ' done' : '');
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = !!item.done;
+    box.onchange = async () => {
+      item.done = box.checked;
+      lab.classList.toggle('done', item.done);
+      updateChkCount(key);
+      try {
+        await api('/api/checklists/toggle', {
+          method: 'POST',
+          body: JSON.stringify({ list: key, id: item.id, done: item.done })
+        });
+      } catch (e) {}
+    };
+    const txt = document.createElement('span');
+    txt.className = 'chk-text';
+    txt.textContent = item.text;
+    lab.appendChild(box);
+    lab.appendChild(txt);
+    host.appendChild(lab);
+  }
+  updateChkCount(key);
+}
+
+function updateChkCount(key) {
+  const el = document.getElementById('chk' + key.charAt(0).toUpperCase() + key.slice(1) + 'Count');
+  if (!el) return;
+  const done = CHK[key].filter(i => i.done).length;
+  el.textContent = done + ' / ' + CHK[key].length;
+  el.classList.toggle('all', done === CHK[key].length && done > 0);
+}
+
+async function loadChecklists() {
+  try {
+    const d = await api('/api/checklists');
+    CHK.startup = (d.lists && d.lists.startup) || [];
+    CHK.shutdown = (d.lists && d.lists.shutdown) || [];
+    renderChk('startup');
+    renderChk('shutdown');
+  } catch (e) {}
+}
+
+document.querySelectorAll('[data-reset]').forEach(btn => {
+  btn.onclick = async () => {
+    const key = btn.dataset.reset;
+    if (!confirm('Untick every item in ' + key + '?')) return;
+    await api('/api/checklists/reset', { method: 'POST', body: JSON.stringify({ list: key }) });
+    await loadChecklists();
+  };
+});
+
 async function pollStatus() {
   try {
     const s = await api('/api/status');
@@ -406,6 +516,7 @@ async function pollStatus() {
     $('dotSrv').className='dot'; $('srvTxt').textContent='server down';
   }
 }
+loadChecklists();
 pollStatus(); setInterval(pollStatus, 2500);
 
 // ------------------------------------------------------------- OBS tab
