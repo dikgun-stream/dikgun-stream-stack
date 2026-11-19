@@ -19,15 +19,15 @@ $ErrorActionPreference = 'Stop'
 $targets = [ordered]@{
     # Starting Soon / BRB / Ending now all run the clip player with chrome,
     # so there is exactly one video pipeline to keep working.
-    'OVL_StartingSoon'   = '/overlay/clips?source=laughter&title=Starting%20Soon&sub=Grab%20a%20drink&minutes=5'
-    'OVL_BRB'            = '/overlay/clips?source=laughter&title=Be%20Right%20Back&sub=Away%20for%20a%20minute'
-    'OVL_Ending'         = '/overlay/clips?source=laughter&title=Thanks%20For%20Watching&sub=Follow%20the%20channel'
-    'OVL_Clips'          = '/overlay/clips?source=laughter'
+    'OVL_StartingSoon'   = '/overlay/clips?source=laughter&mute=0&title=Starting%20Soon&sub=Grab%20a%20drink&minutes=5'
+    'OVL_BRB'            = '/overlay/clips?source=laughter&mute=0&title=Be%20Right%20Back&sub=Away%20for%20a%20minute'
+    'OVL_Ending'         = '/overlay/clips?source=laughter&mute=0&title=Thanks%20For%20Watching&sub=Follow%20the%20channel'
+    'OVL_Clips'          = '/overlay/clips?source=laughter&mute=0'
 
-    'OVL_StartingSoon_V' = '/overlay/clips?source=laughter&v=1&title=Starting%20Soon&sub=Grab%20a%20drink&minutes=5'
-    'OVL_BRB_V'          = '/overlay/clips?source=laughter&v=1&title=Be%20Right%20Back&sub=Away%20for%20a%20minute'
-    'OVL_Ending_V'       = '/overlay/clips?source=laughter&v=1&title=Thanks%20For%20Watching&sub=Follow%20the%20channel'
-    'OVL_Clips_V'        = '/overlay/clips?source=laughter&v=1'
+    'OVL_StartingSoon_V' = '/overlay/clips?source=laughter&v=1&mute=0&title=Starting%20Soon&sub=Grab%20a%20drink&minutes=5'
+    'OVL_BRB_V'          = '/overlay/clips?source=laughter&v=1&mute=0&title=Be%20Right%20Back&sub=Away%20for%20a%20minute'
+    'OVL_Ending_V'       = '/overlay/clips?source=laughter&v=1&mute=0&title=Thanks%20For%20Watching&sub=Follow%20the%20channel'
+    'OVL_Clips_V'        = '/overlay/clips?source=laughter&v=1&mute=0'
 
     'OVL_Deadlock_V'     = '/overlay/deadlock?left=26&bottom=640&width=150'
     'OVL_Alerts'         = '/overlay/alerts'
@@ -49,9 +49,15 @@ try {
         $url = "$Server$path${sep}cb=$cb"
         try {
             $current = (Invoke-Obs 'GetInputSettings' @{ inputName = $name }).responseData.inputSettings.url
+            $settings = @{ url = $url }
+            if ($name -like 'OVL_Clips*' -or $name -like 'OVL_Ending*' -or
+                $name -like 'OVL_StartingSoon*' -or $name -like 'OVL_BRB*') {
+                # browser sources do not feed the mixer unless this is set
+                $settings['reroute_audio'] = $true
+            }
             Invoke-Obs 'SetInputSettings' @{
                 inputName     = $name
-                inputSettings = @{ url = $url }
+                inputSettings = $settings
             } | Out-Null
             Write-Host ("  {0,-20} refreshed" -f $name)
         } catch {
