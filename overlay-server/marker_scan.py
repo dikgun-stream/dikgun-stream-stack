@@ -138,6 +138,35 @@ def load(game: str):
     return _MODEL
 
 
+_TESSERACT = None
+
+
+def _tesseract():
+    """Locate tesseract once.
+
+    pytesseract looks on PATH by default, and the Windows installer does not
+    add itself. Without this every OCR call raised TesseractNotFoundError and
+    the blanket except below turned it into "no marker found" -- which looked
+    exactly like a detector that did not work.
+    """
+    global _TESSERACT
+    if _TESSERACT is not None:
+        return _TESSERACT
+    import pytesseract
+
+    candidates = [
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            pytesseract.pytesseract.tesseract_cmd = c
+            _TESSERACT = c
+            return c
+    _TESSERACT = "tesseract"          # fall back to PATH
+    return _TESSERACT
+
+
 def ocr_hit(frame) -> float:
     """Return 1.0 if the configured word is readable in this frame."""
     import cv2
@@ -146,15 +175,30 @@ def ocr_hit(frame) -> float:
 
     if not _TEXT_CFG:
         return 0.0
+    _tesseract()
     needle = _TEXT_CFG["_needle"]
     try:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        # upscale: the label is ~14px tall in a 1080p frame
-        big = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-        txt = pytesseract.image_to_string(
-            Image.fromarray(big), config="--psm 11").upper()
-        return 1.0 if needle in txt.replace("|", " ") else 0.0
-    except Exception:  # noqa: BLE001
+        # several passes: game text varies in size and contrast, and OCR is
+        # cheap next to decoding the frame
+        # two passes only. Twelve combinations took 3.3s per frame, which is
+        # hours per folder; these two are the ones that actually read the text
+        # on the verified frames.
+        passes = [
+            (cv2.resize(cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)[1],
+                        None, fx=2.0, fy=2.0, interpolation=cv2.INTER_NEAREST), 6),
+            (cv2.resize(gray, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC), 11),
+        ]
+        for img, psm in passes:
+            txt = pytesseract.image_to_string(
+                Image.fromarray(img), config=f"--psm {psm}").upper()
+            if needle in txt.replace("|", " "):
+                return 1.0
+        return 0.0
+    except Exception as exc:  # noqa: BLE001
+        if not getattr(ocr_hit, "_warned", False):
+            print(f"  !! OCR failed ({type(exc).__name__}: {exc}) -- treating as no marker")
+            ocr_hit._warned = True
         return 0.0
 
 
