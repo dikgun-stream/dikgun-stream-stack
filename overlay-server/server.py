@@ -1020,6 +1020,43 @@ async def obs_stats() -> dict:
     return await OBS.stats()
 
 
+@app.get("/api/live/status")
+async def live_status() -> dict:
+    """Is the stream actually up, and what is it showing?
+
+    Exists so other processes -- the Discord bot, monitors -- can tell whether a
+    stream is live without talking to OBS themselves and without holding the
+    websocket password.
+    """
+    out = {
+        "ok": True,
+        "live": False,
+        "recording": False,
+        "scene": None,
+        "title": CONFIG["stream"]["title"],
+        "game": CONFIG["stream"]["game"],
+        "twitch": "https://twitch.tv/" + str(CONFIG.get("twitch", {}).get("channel", "dikgun")),
+        "obs_connected": False,
+    }
+    try:
+        stream = await OBS.request("GetStreamStatus")
+        out["live"] = bool(stream.get("outputActive"))
+        out["obs_connected"] = True
+        out["uptime_ms"] = stream.get("outputDuration", 0)
+    except Exception:  # noqa: BLE001
+        return out
+    try:
+        rec = await OBS.request("GetRecordStatus")
+        out["recording"] = bool(rec.get("outputActive"))
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        out["scene"] = (await OBS.request("GetCurrentProgramScene")).get("currentProgramSceneName")
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
 @app.post("/api/obs/stream")
 async def obs_stream(body: ActionIn) -> dict:
     mapping = {"start": "StartStream", "stop": "StopStream", "toggle": "ToggleStream"}

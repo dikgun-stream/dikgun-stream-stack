@@ -38,3 +38,9 @@ overlay-server/.*.lock
 # Brand assets are deliverables, not debug captures. The *.jpg rule above is
 # for screenshots of the real desktop; these are commissioned artwork.
 !brand/**/*.jpg
+
+# Discord bot token - never commit
+.env
+discord-bot/.env
+discord-bot/_clipexcerpt.mp4
+discord-bot/_clipframe.jpg

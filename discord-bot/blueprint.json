@@ -1,0 +1,111 @@
+{
+  "roles": [
+    {
+      "key": "mod",
+      "name": "Moderator",
+      "color": "C8161D",
+      "hoist": true,
+      "permissions": ["manage_messages", "moderate_members", "kick_members", "manage_nicknames", "view_audit_log"],
+      "mentionable": false
+    },
+    {
+      "key": "vip",
+      "name": "Subscriber",
+      "color": "ECE4D2",
+      "hoist": true,
+      "permissions": [],
+      "mentionable": false
+    },
+    {
+      "key": "clip",
+      "name": "Clip Star",
+      "color": "6EA8FE",
+      "hoist": true,
+      "permissions": [],
+      "mentionable": false
+    },
+    {
+      "key": "member",
+      "name": "Member",
+      "color": "9BA3AF",
+      "hoist": false,
+      "permissions": [],
+      "mentionable": false
+    }
+  ],
+  "categories": [
+    {
+      "name": "WELCOME",
+      "channels": [
+        { "name": "rules", "type": "text", "readonly": true, "topic": "Read before posting." },
+        { "name": "announcements", "type": "announcement", "readonly": true, "topic": "Stream notices and channel news." },
+        { "name": "introductions", "type": "text", "topic": "Say who you are and what you play." },
+        { "name": "reaction-roles", "type": "text", "readonly": true, "topic": "Pick your roles with the buttons." }
+      ]
+    },
+    {
+      "name": "THE STREAM",
+      "channels": [
+        { "name": "live", "type": "text", "readonly": true, "topic": "Goes live when the stream does." },
+        { "name": "clips", "type": "text", "topic": "Drop clips here, the bot will pick favourites." },
+        { "name": "chat", "type": "text", "topic": "The general channel." },
+        { "name": "lfg", "type": "text", "topic": "Find people to queue with." }
+      ]
+    },
+    {
+      "name": "GAMES",
+      "channels": [
+        { "name": "deadlock", "type": "text", "topic": "Deadlock." },
+        { "name": "tarkov", "type": "text", "topic": "Escape from Tarkov." },
+        { "name": "apex", "type": "text", "topic": "Apex Legends." },
+        { "name": "siege", "type": "text", "topic": "Rainbow Six Siege." },
+        { "name": "other-games", "type": "text", "topic": "Battlefield, The Finals, Hunt, HLL, REPO, PUBG." }
+      ]
+    },
+    {
+      "name": "VOICE",
+      "channels": [
+        { "name": "Lobby", "type": "voice" },
+        { "name": "Game 1", "type": "voice" },
+        { "name": "Game 2", "type": "voice" }
+      ]
+    },
+    {
+      "name": "STAFF",
+      "staff_only": true,
+      "channels": [
+        { "name": "mod-log", "type": "text", "readonly": true, "topic": "Every moderation action lands here." },
+        { "name": "staff-chat", "type": "text", "topic": "Staff only." }
+      ]
+    }
+  ],
+  "automod": {
+    "note": "Discord's native AutoMod is free and cannot be created by a bot. See README for the settings to apply by hand.",
+    "rules": [
+      {
+        "name": "Block slurs and threats",
+        "trigger": "keywords",
+        "action": "Block message + timeout 10 min",
+        "keywords": ["slur-list-placeholder", "kys", "kill yourself"]
+      },
+      {
+        "name": "Block invite links",
+        "trigger": "keywords",
+        "action": "Block message + alert mod-log",
+        "keywords": ["discord.gg/", "discord.com/invite/", "dis.gd/"]
+      },
+      {
+        "name": "Spam",
+        "trigger": "spam",
+        "action": "Block + timeout 5 min",
+        "settings": { "message_limit": 12, "time_window_seconds": 10 }
+      },
+      {
+        "name": "Mention flood",
+        "trigger": "mention_spam",
+        "action": "Block + alert mod-log",
+        "settings": { "mention_limit": 8 }
+      }
+    ]
+  }
+}

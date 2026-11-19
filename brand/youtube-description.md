@@ -92,8 +92,8 @@ Mic        Blue Yeti X (World of Warcraft Edition)
 Headset    Logitech PRO X Wireless
 Webcam     Logitech C922 Pro Stream
 Mouse      Logitech G502
-Keyboard   Corsair K70 RGB
-Mousepad   Razer Firefly
+Keyboard   G915 
+Mousepad   Cloth Steel Series
 
 Capture    OBS Studio
            Streamer.bot for alerts and chat
