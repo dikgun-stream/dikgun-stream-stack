@@ -31,3 +31,4 @@ overlay-server/clips_cache.json
 # Derived audio-scan index (regenerate with laughter_scan.py)
 overlay-server/laughter_index.json
 overlay-server/laughter_scan.log
+overlay-server/kill_index.json

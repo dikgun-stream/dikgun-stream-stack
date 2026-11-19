@@ -324,6 +324,56 @@ python laughter_scan.py --all --threshold 0.02 --pad 35 --min-gap 6 --rescan
 `--rescan` is required when changing either value; without it, already-scanned
 files are skipped and the old windows remain.
 
+
+## Kill highlights
+
+Laughter is not the only kind of moment worth playing. `overlay-server/kill_scan.py`
+finds kills so the rotation is not all laughs, and both pools are merged by
+`/api/clips/highlights?source=all`.
+
+Currently implemented for **Rainbow Six Siege** only. The tell is a small red X
+at the crosshair with a white centre dot, arriving together with a white
+`+110`-style score popup just above it.
+
+Detection requires all three of:
+
+1. score popup matches (white-text mask) >= 0.50
+2. kill X matches (red-mask) >= 0.40
+3. the two matches are within 110px of each other
+
+The third condition is what made it usable. Without it an orange cargo crate
+scored 0.74 against the red X template and produced a false kill.
+
+Matching is mask-to-mask rather than greyscale: a binary "is this pixel red /
+white" mask survives changing backdrops that a brightness correlation does not.
+
+Kill windows are +/-20s, deliberately tighter than laughter's +/-35s -- a kill
+wants the second before and a beat after, not a minute of build-up.
+
+Templates live in `streamer-mode/assets/kill/`. Verified 4/4 true positives on
+independent recordings (red X, hit sparks and score popup all present).
+
+```powershell
+python kill_scan.py --list --game "rainbow six"
+python kill_scan.py --one <file>
+python kill_scan.py --all --game "rainbow six"
+```
+
+### Other games (not implemented)
+
+Battlefield 1, Battlefield 6 and Battlefield 2042 were requested. There is no
+usable footage to calibrate against:
+
+- `Battlefield 2042/` -- one 105s recording, entirely menus (loading, unlock
+  notices, specialist and vehicle select). No gameplay.
+- `B1/` -- one 120s recording, which is not the game at all: it is a browser
+  window showing a Twitch stream of a Steam library.
+- `Battlefield 1/` -- directory exists but is empty.
+- Battlefield 6 -- no directory, no footage.
+
+Each game needs one confirmed kill frame to build a template from, then the
+scanner works the same way. Tarkov is deliberately out of scope.
+
 ### Playing them
 
 `/api/clips/highlights?source=laughter` returns playable windows

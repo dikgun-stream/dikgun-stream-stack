@@ -667,53 +667,74 @@ async def api_clips(game: str | None = None, limit: int = 400) -> dict:
 
 
 @app.get("/api/clips/highlights")
-async def api_clip_highlights(source: str = "laughter", limit: int = 300) -> dict:
-    """Playable highlight windows, currently from the laughter scan.
+async def api_clip_highlights(source: str = "all", limit: int = 400) -> dict:
+    """Playable highlight windows, from laughter, kills, or both.
 
     Each entry is a window inside a full recording: the player seeks to `start`
     and plays for `len` seconds. Records are never cut on disk -- the source
     files are hundreds of MB to several GB and copying them is not worth it.
-    """
-    index_path = Path(__file__).with_name("laughter_index.json")
-    data: dict = {}
-    if index_path.is_file():
-        try:
-            data = json.loads(index_path.read_text(encoding="utf-8"))
-        except Exception:  # noqa: BLE001
-            data = {}
 
+    Kills and laughter are different shapes of moment (a kill wants ~20s of
+    context, a laugh wants ~70s), so the windows arrive already sized by their
+    own scanner and the player simply shuffles them together.
+    """
+    want = (source or "all").lower()
     clips = await asyncio.to_thread(clip_lib.scan, CLIPS_ROOT, CLIPS_CACHE)
     by_rel = {c["rel"]: c for c in clips}
 
-    out: list[dict] = []
-    for rel, res in (data.get("files") or {}).items():
-        meta = by_rel.get(rel)
-        if not meta or not isinstance(res, dict) or not res.get("ok"):
-            continue
-        for seg in res.get("segments") or []:
-            try:
-                start = float(seg["start"])
-                end = float(seg["end"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            if end - start < 5:
-                continue
-            out.append({
-                "rel": rel,
-                "game": meta["game"],
-                "title": meta["title"],
-                "start": round(start, 2),
-                "len": round(end - start, 2),
-                "laugh_at": seg.get("laugh_at"),
-                "peak": res.get("peak"),
-                "source": source,
-            })
+    def load(name: str) -> dict:
+        path = Path(__file__).with_name(name)
+        if not path.is_file():
+            return {"files": {}}
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            return {"files": {}}
 
-    out.sort(key=lambda x: -(x.get("laugh_at") or 0))
+    out: list[dict] = []
+    sources = []
+    if want in ("all", "laughter"):
+        sources.append(("laughter", load("laughter_index.json"), None))
+    if want in ("all", "kills", "kill"):
+        sources.append(("kill", load("kill_index.json"), None))
+
+    scanned = 0
+    for label, data, _ in sources:
+        files = data.get("files") or {}
+        scanned += len(files)
+        for rel, res in files.items():
+            meta = by_rel.get(rel)
+            if not meta or not isinstance(res, dict) or not res.get("ok"):
+                continue
+            for seg in res.get("segments") or []:
+                try:
+                    start = float(seg["start"])
+                    end = float(seg["end"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if end - start < 5:
+                    continue
+                out.append({
+                    "rel": rel,
+                    "game": meta["game"],
+                    "title": meta["title"],
+                    "start": round(start, 2),
+                    "len": round(end - start, 2),
+                    "kills": seg.get("kills"),
+                    "laugh_at": seg.get("laugh_at"),
+                    "peak": res.get("peak") or res.get("peak_score"),
+                    "source": label,
+                })
+
+    out.sort(key=lambda x: -(x.get("kills") or 0) * 10 - (x.get("laugh_at") or 0))
+    by_source = {}
+    for e in out:
+        by_source[e["source"]] = by_source.get(e["source"], 0) + 1
     return {
         "count": len(out),
-        "source": source,
-        "scanned": len(data.get("files") or {}),
+        "source": want,
+        "scanned": scanned,
+        "bySource": by_source,
         "highlights": out[: max(1, limit)],
     }
 
