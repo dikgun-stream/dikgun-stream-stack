@@ -1,0 +1,4 @@
+{
+  "text": "KILL",
+  "note": "Battlefield announces a kill with a boxed 'KILL' label left of centre, around x=528 y=731 in a 1920x1080 frame. A pixel template cannot separate it from the rest of a bright snowy HUD, so this template uses OCR instead of mask matching."
+}

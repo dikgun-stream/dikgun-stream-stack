@@ -50,17 +50,94 @@ def template_path(game: str) -> Path:
     return p
 
 
+def region_for(game: str, center: int):
+    """Search box in full-frame pixels.
+
+    A per-template region.json overrides the default centre crop. Not every
+    marker is centred: Battlefield's KILL banner sits left of centre at
+    x~530, so a centre crop never even contains it.
+    """
+    cfg = TPL_DIR / game.lower() / "region.json"
+    if cfg.is_file():
+        try:
+            r = json.loads(cfg.read_text(encoding="utf-8"))
+            return int(r["x"]), int(r["y"]), int(r["w"]), int(r["h"])
+        except Exception:  # noqa: BLE001
+            pass
+    s = min(center, 1080, 1920)
+    return (1920 - s) // 2, (1080 - s) // 2, s, s
+
+
 _MODEL = None
+_MASK_KIND = None
+_TEXT_CFG = None
 
 
 def load(game: str):
-    global _MODEL
+    """Load the marker model for a game.
+
+    Two kinds of marker are supported:
+
+    1. Icon    -- a mask.png of the marker's shape/colour, matched against a
+                  colour mask of the frame (Deadlock's red ring).
+    2. Text    -- a text.json naming a literal on-screen word, read with OCR.
+                  Battlefield announces kills with a boxed "KILL" label, and a
+                  pixel template cannot separate that from the rest of a bright,
+                  snowy HUD (measured: 56k white pixels in the crop, best
+                  correlation 0.58 on the marker's own frame).
+    """
+    global _MODEL, _MASK_KIND, _TEXT_CFG
     import cv2
     import numpy as np
 
+    d = TPL_DIR / game.lower()
+    text_cfg = d / "text.json"
+    if text_cfg.is_file():
+        try:
+            _TEXT_CFG = json.loads(text_cfg.read_text(encoding="utf-8"))
+            _TEXT_CFG["_needle"] = str(_TEXT_CFG.get("text", "KILL")).upper()
+            print(f"  marker '{game}' -> OCR, looking for '{_TEXT_CFG['_needle']}'")
+            return None
+        except Exception as exc:  # noqa: BLE001
+            raise SystemExit(f"bad text.json for {game}: {exc}")
+
+    _TEXT_CFG = None
     mask = cv2.imread(str(template_path(game)), cv2.IMREAD_GRAYSCALE)
-    _MODEL = (mask > 127).astype(np.uint8)
+    tpl = (mask > 127).astype(np.uint8)
+    _MODEL = tpl
+
+    kind = "red"
+    ref_path = d / "ref.png"
+    if ref_path.is_file():
+        ref = cv2.imread(str(ref_path))
+        if ref is not None and ref.shape[:2] == tpl.shape[:2]:
+            sel = tpl > 0
+            if sel.any():
+                b, g, r = [float(ref[:, :, i][sel].mean()) for i in range(3)]
+                kind = "red" if r > max(g, b) + 25 else "white"
+    _MASK_KIND = kind
+    print(f"  marker '{game}' -> colour mask: {kind}")
     return _MODEL
+
+
+def ocr_hit(frame) -> float:
+    """Return 1.0 if the configured word is readable in this frame."""
+    import cv2
+    import pytesseract
+    from PIL import Image
+
+    if not _TEXT_CFG:
+        return 0.0
+    needle = _TEXT_CFG["_needle"]
+    try:
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        # upscale: the label is ~14px tall in a 1080p frame
+        big = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+        txt = pytesseract.image_to_string(
+            Image.fromarray(big), config="--psm 11").upper()
+        return 1.0 if needle in txt.replace("|", " ") else 0.0
+    except Exception:  # noqa: BLE001
+        return 0.0
 
 
 # --------------------------------------------------------------------------- matching
@@ -82,11 +159,12 @@ def score_frame(frame, tpl, scales=(0.85, 1.0, 1.15, 1.3)):
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     h, s, v = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
 
-    # the marker is saturated red (Deadlock) -- this generalises poorly to other
-    # colours, so a template whose own pixels are not mostly red falls back to
-    # "any strongly saturated pixel"
-    red = (((h < 12) | (h > 166)) & (s > 130) & (v > 90)).astype(np.uint8)
-    mask = red if tpl.mean() > 0 else red
+    if _MASK_KIND == "white":
+        # bright and desaturated: white HUD text and box outlines
+        mask = ((v > 150) & (s < 90)).astype(np.uint8)
+    else:
+        # saturated red
+        mask = (((h < 12) | (h > 166)) & (s > 130) & (v > 90)).astype(np.uint8)
 
     top = 0.0
     for sc in scales:
@@ -146,10 +224,10 @@ def duration(video: Path) -> float:
         return 0.0
 
 
-def frames(video: Path, fps: int, size: int):
+def frames(video: Path, fps: int, size: int, region=None):
     import numpy as np
 
-    x0, y0, w, h = region_of((1080, 1920), size)
+    x0, y0, w, h = region if region else region_of((1080, 1920), size)
     cmd = ["ffmpeg", "-v", "error", "-i", str(video),
            "-vf", f"crop={w}:{h}:{x0}:{y0},fps={fps}",
            "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
@@ -173,9 +251,10 @@ def frames(video: Path, fps: int, size: int):
 def scan_file(video: Path, game: str, threshold: float, fps: int,
               center: int, pad: float, min_gap: float, verbose=False) -> dict:
     tpl = load(game)
+    region = region_for(game, center)
     times, peak, nf = [], 0.0, 0
-    for fr in frames(video, fps, center):
-        sc = score_frame(fr, tpl)
+    for fr in frames(video, fps, center, region):
+        sc = ocr_hit(fr) if _TEXT_CFG else score_frame(fr, tpl)
         peak = max(peak, sc)
         if sc >= threshold:
             times.append(nf / fps)
