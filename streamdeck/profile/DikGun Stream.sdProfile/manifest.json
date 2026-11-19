@@ -1,0 +1,379 @@
+{
+    "Actions": {
+        "0,0": {
+            "ActionID": "dlc0unt00-0000-0000-000000000000",
+            "Controller": "",
+            "Name": "Open",
+            "Settings": {
+                "openShowState": false,
+                "path": "C:\\Users\\JR\\Documents\\deepseek-harness\\default-workspace\\streamer-mode\\deck\\damage.bat"
+            },
+            "State": 0,
+            "States": [
+                {
+                    "FontSize": 8,
+                    "Image": "Images/btn_launch",
+                    "Title": "DMG+500"
+                }
+            ],
+            "UUID": "com.hotspot.streamdock.system.open"
+        },
+        "0,1": {
+            "ActionID": "9hujulki-d4p5-n25d-v3p3-0253a4i3702i",
+            "Controller": "",
+            "Name": "STREAM MODE",
+            "Settings": {
+                "path": "C:\\Users\\JR\\Documents\\deepseek-harness\\default-workspace\\streamer-mode\\deck\\stream-mode.bat"
+            },
+            "State": 0,
+            "States": [
+                {
+                    "FontFamily": "Arial",
+                    "FontSize": 10,
+                    "Image": "T311XZPUYVFF2N6V8PQQRYTG2DN.png",
+                    "Title": "",
+                    "TitleAlignment": "middle",
+                    "TitleColor": "#ffffff"
+                }
+            ],
+            "UUID": "com.hotspot.streamdock.system.open"
+        },
+        "0,2": {
+            "ActionID": "whd6843b-ug09-4wwe-3u59-20c536eqeu40",
+            "Controller": "",
+            "Name": "DASH",
+            "Settings": {
+                "path": "C:\\Users\\JR\\Documents\\deepseek-harness\\default-workspace\\streamer-mode\\deck\\dashboard.bat"
+            },
+            "State": 0,
+            "States": [
+                {
+                    "FontFamily": "Arial",
+                    "FontSize": 10,
+                    "Image": "95I7CT6U4U2683V41KW413KTNU0.png",
+                    "Title": "",
+                    "TitleAlignment": "middle",
+                    "TitleColor": "#ffffff"
+                }
+            ],
+            "UUID": "com.hotspot.streamdock.system.open"
+        },
+        "1,0": {
+            "ActionID": "l4unch0p-10-0000-0000-000000000000",
+            "Controller": "",
+            "Name": "Open",
+            "Settings": {
+                "openShowState": false,
+                "path": "C:\\Users\\JR\\Documents\\deepseek-harness\\default-workspace\\streamer-mode\\deck\\launch-eft.bat"
+            },
+            "State": 0,
+            "States": [
+                {
+                    "FontSize": 8,
+                    "Image": "Images/btn_launch",
+                    "Title": ""
+                }
+            ],
+            "UUID": "com.hotspot.streamdock.system.open"
+        },
+        "1,1": {
+            "ActionID": "c2txz3o2-247l-15l3-1f74-dxml2enj4dw6",
+            "Controller": "Keypad",
+            "Name": "STOP",
+            "Settings": {
+                "path": "C:\\Users\\JR\\Documents\\deepseek-harness\\default-workspace\\streamer-mode\\deck\\stop-live.bat"
+            },
+            "State": 0,
+            "States": [
+                {
+                    "FontFamily": "Arial",
+                    "FontSize": 10,
+                    "Image": "44OISH82A3Y433R254E2J6J6ZTL.png",
+                    "Title": "",
+                    "TitleAlignment": "middle",
+                    "TitleColor": "#ffffff"
+                }
+            ],
+            "UUID": "com.hotspot.streamdock.system.open"
+        },
+        "1,2": {
+            "ActionID": "8j6a38j4-e334-txa6-5m42-1x610i53m862",
+            "Controller": "Keypad",
+            "Name": "DEV MODE",
+            "Settings": {
+                "path": "C:\\Users\\JR\\Documents\\deepseek-harness\\default-workspace\\streamer-mode\\deck\\dev-mode.bat"
+            },
+            "State": 0,
+            "States": [
+                {
+                    "FontFamily": "Arial",
+                    "FontSize": 10,
+                    "Image": "B0F9025021EFW4N6C41NZVFS152.png",
+                    "Title": "",
+                    "TitleAlignment": "middle",
+                    "TitleColor": "#ffffff"
+                }
+            ],
+            "UUID": "com.hotspot.streamdock.system.open"
+        },
+        "2,0": {
+            "ActionID": "l4unch0p-20-0000-0000-000000000000",
+            "Controller": "",
+            "Name": "Open",
+            "Settings": {
+                "openShowState": false,
+                "path": "C:\\Users\\JR\\Documents\\deepseek-harness\\default-workspace\\streamer-mode\\deck\\launch-deadlock.bat"
+            },
+            "State": 0,
+            "States": [
+                {
+                    "FontSize": 8,
+                    "Image": "Images/btn_launch",
+                    "Title": ""
+                }
+            ],
+            "UUID": "com.hotspot.streamdock.system.open"
+        },
+        "2,1": {
+            "ActionID": "k33eg5m1-9l72-v5g0-52km-zbx53p3gh43i",
+            "Controller": "",
+            "Name": "MIC",
+            "Settings": {
+                "path": "C:\\Users\\JR\\Documents\\deepseek-harness\\default-workspace\\streamer-mode\\deck\\mic-toggle.bat"
+            },
+            "State": 0,
+            "States": [
+                {
+                    "FontFamily": "Arial",
+                    "FontSize": 10,
+                    "Image": "3HEQ1M4003MYZFSZYHGK19YS0OS.png",
+                    "Title": "",
+                    "TitleAlignment": "middle",
+                    "TitleColor": "#ffffff"
+                }
+            ],
+            "UUID": "com.hotspot.streamdock.system.open"
+        },
+        "2,2": {
+            "ActionID": "eqeil5mf-7mdf-sjqg-1b2d-dwoz2d7yb1er",
+            "Controller": "",
+            "Name": "LIVE",
+            "Settings": {
+            },
+            "State": 0,
+            "States": [
+                {
+                    "FontFamily": "Arial",
+                    "FontSize": 10,
+                    "Image": "obs_stream.png",
+                    "Title": "",
+                    "TitleAlignment": "middle",
+                    "TitleColor": "#ffffff"
+                },
+                {
+                    "FontFamily": "Arial",
+                    "FontSize": 10,
+                    "Image": "obs_stream.png",
+                    "Title": "",
+                    "TitleAlignment": "middle",
+                    "TitleColor": "#ffffff"
+                }
+            ],
+            "UUID": "com.gabilan.obs.studio.action3"
+        },
+        "3,0": {
+            "ActionID": "yt6aew1e-si8a-sn6v-1l6l-b9060o0223mo",
+            "Controller": "Keypad",
+            "Name": "PANIC",
+            "Settings": {
+                "path": "C:\\Users\\JR\\Documents\\deepseek-harness\\default-workspace\\streamer-mode\\deck\\panic.bat"
+            },
+            "State": 0,
+            "States": [
+                {
+                    "FontFamily": "Arial",
+                    "FontSize": 10,
+                    "Image": "B1412REJ0V32V8TB463442FI3Y8.png",
+                    "Title": "",
+                    "TitleAlignment": "middle",
+                    "TitleColor": "#ffffff"
+                }
+            ],
+            "UUID": "com.hotspot.streamdock.system.open"
+        },
+        "3,1": {
+            "ActionID": "jnc0u2sj-zgy7-u0f1-5ofl-y2nks17w958k",
+            "Controller": "",
+            "Name": "RESTORE",
+            "Settings": {
+                "path": "C:\\Users\\JR\\Documents\\deepseek-harness\\default-workspace\\streamer-mode\\deck\\restore.bat"
+            },
+            "State": 0,
+            "States": [
+                {
+                    "FontFamily": "Arial",
+                    "FontSize": 10,
+                    "Image": "89M4F41285KU873WI8V9FQQ7B20.png",
+                    "Title": "",
+                    "TitleAlignment": "middle",
+                    "TitleColor": "#ffffff"
+                }
+            ],
+            "UUID": "com.hotspot.streamdock.system.open"
+        },
+        "3,2": {
+            "ActionID": "h937p1v4-c00f-8ato-pqr5-nij7fws88ylv",
+            "Controller": "Keypad",
+            "Name": "CHAT",
+            "Settings": {
+                "path": "C:\\Users\\JR\\Documents\\deepseek-harness\\default-workspace\\streamer-mode\\deck\\chat.bat"
+            },
+            "State": 0,
+            "States": [
+                {
+                    "FontFamily": "Arial",
+                    "FontSize": 10,
+                    "Image": "7N560242824DMITX2M8JE1Q3O7R.png",
+                    "Title": "",
+                    "TitleAlignment": "middle",
+                    "TitleColor": "#ffffff"
+                }
+            ],
+            "UUID": "com.hotspot.streamdock.system.open"
+        },
+        "4,0": {
+            "ActionID": "l4unch0p-40-0000-0000-000000000000",
+            "Controller": "",
+            "Name": "Open",
+            "Settings": {
+                "openShowState": false,
+                "path": "C:\\Users\\JR\\Documents\\deepseek-harness\\default-workspace\\streamer-mode\\deck\\yt-live.bat"
+            },
+            "State": 0,
+            "States": [
+                {
+                    "FontSize": 8,
+                    "Image": "Images/btn_launch",
+                    "Title": "YT LIVE"
+                }
+            ],
+            "UUID": "com.hotspot.streamdock.system.open"
+        },
+        "4,1": {
+            "ActionID": "l4unch0p-41-0000-0000-000000000000",
+            "Controller": "",
+            "Name": "Open",
+            "Settings": {
+                "openShowState": false,
+                "path": "C:\\Users\\JR\\Documents\\deepseek-harness\\default-workspace\\streamer-mode\\deck\\go-live.bat"
+            },
+            "State": 0,
+            "States": [
+                {
+                    "FontSize": 8,
+                    "Image": "Images/btn_launch",
+                    "Title": "TWITCH+VERT"
+                }
+            ],
+            "UUID": "com.hotspot.streamdock.system.open"
+        },
+        "4,2": {
+            "ActionID": "dlc0unt42-0000-0000-000000000000",
+            "Controller": "",
+            "Name": "Open",
+            "Settings": {
+                "openShowState": false,
+                "path": "C:\\Users\\JR\\Documents\\deepseek-harness\\default-workspace\\streamer-mode\\deck\\kill.bat"
+            },
+            "State": 0,
+            "States": [
+                {
+                    "FontSize": 8,
+                    "Image": "Images/btn_launch",
+                    "Title": "KILL+1"
+                }
+            ],
+            "UUID": "com.hotspot.streamdock.system.open"
+        },
+        "5,0": {
+            "ActionID": "5ovxu81j-p8rq-ooxt-bd8m-hpeoceznn2mu",
+            "Controller": "",
+            "Name": "STATS",
+            "Settings": {
+            },
+            "State": 0,
+            "States": [
+                {
+                    "FontFamily": "Arial",
+                    "FontSize": 10,
+                    "Image": "obs_stats.png",
+                    "Title": "",
+                    "TitleAlignment": "middle",
+                    "TitleColor": "#ffffff"
+                },
+                {
+                    "FontFamily": "Arial",
+                    "FontSize": 10,
+                    "Image": "obs_stats.png",
+                    "Title": "",
+                    "TitleAlignment": "middle",
+                    "TitleColor": "#ffffff"
+                }
+            ],
+            "UUID": "com.gabilan.obs.studio.action34"
+        },
+        "5,1": {
+            "ActionID": "ko8lb9fl-ogwr-u8gz-3pgm-kcjcdlea5hs6",
+            "Controller": "",
+            "Name": "ADMIN",
+            "Settings": {
+            },
+            "State": 0,
+            "States": [
+                {
+                    "FontFamily": "Arial",
+                    "FontSize": 10,
+                    "Image": "page_next.png",
+                    "Title": "",
+                    "TitleAlignment": "middle",
+                    "TitleColor": "#ffffff"
+                }
+            ],
+            "UUID": "com.hotspot.streamdock.page.change"
+        },
+        "5,2": {
+            "ActionID": "dlc0unt52-0000-0000-000000000000",
+            "Controller": "",
+            "Name": "Open",
+            "Settings": {
+                "openShowState": false,
+                "path": "C:\\Users\\JR\\Documents\\deepseek-harness\\default-workspace\\streamer-mode\\deck\\assist.bat"
+            },
+            "State": 0,
+            "States": [
+                {
+                    "FontSize": 8,
+                    "Image": "Images/btn_launch",
+                    "Title": "ASSIST+1"
+                }
+            ],
+            "UUID": "com.hotspot.streamdock.system.open"
+        }
+    },
+    "AppIdentifier": "",
+    "AppIdentifier0": "",
+    "AppIdentifier1": "",
+    "AppIdentifier2": "",
+    "DeviceModel": "20GBA9901",
+    "DeviceSerialNumber": "355499441494",
+    "DeviceUUID": "AKP153E",
+    "Name": "DikGun Stream",
+    "Pages": {
+        "Current": "MRX4M90L-GH25-1C1J-QU4E-HBQZCSII3GQA.sdProfile",
+        "Pages": [
+            "MRX4M90L-GH25-1C1J-QU4E-HBQZCSII3GQA.sdProfile",
+            "8H3YBY19-GGHR-N6ZG-BWVG-AKGGKZKRV16E.sdProfile"
+        ]
+    },
+    "Version": "1.0"
+}
