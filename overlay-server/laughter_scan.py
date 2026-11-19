@@ -173,7 +173,8 @@ def segments_from_curve(curve, threshold, min_gap=8.0, pad=90.0, total=None):
     return merged
 
 
-def scan_file(video: Path, threshold: float, verbose: bool = False) -> dict:
+def scan_file(video: Path, threshold: float, verbose: bool = False,
+              pad: float = 90.0, min_gap: float = 8.0) -> dict:
     audio = extract_audio(video)
     if audio is None or len(audio) < 16000 * 5:
         return {"ok": False, "reason": "no audio track"}
@@ -181,7 +182,7 @@ def scan_file(video: Path, threshold: float, verbose: bool = False) -> dict:
     curve = laughter_curve(audio)
     dur = len(audio) / 16000.0
     peak = max(curve) if curve else 0.0
-    segs = segments_from_curve(curve, threshold, total=dur)
+    segs = segments_from_curve(curve, threshold, min_gap=min_gap, pad=pad, total=dur)
 
     if verbose:
         import numpy as np
@@ -215,7 +216,15 @@ def save_index(idx: dict) -> None:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=os.environ.get("DIKGUN_CLIPS", r"C:\Users\JR\Videos"))
-    ap.add_argument("--threshold", type=float, default=0.10)
+    ap.add_argument("--threshold", type=float, default=0.10,
+                    help="laughter probability needed to count (0.02 recalls a lot, "
+                         "0.05 is a reasonable precision/recall trade, 0.1+ is confident)")
+    ap.add_argument("--pad", type=float, default=90.0,
+                    help="seconds either side of a detection (90 = a 3 minute window). "
+                         "Most recordings here are only 2-5 minutes, so 90 collapses to "
+                         "the whole file -- drop to 30-45 for more, tighter clips.")
+    ap.add_argument("--min-gap", type=float, default=8.0,
+                    help="detections closer together than this are one event")
     ap.add_argument("--one", help="scan a single file")
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--list", action="store_true")
@@ -239,7 +248,7 @@ def main(argv=None) -> int:
         target = Path(args.one)
         print(f"scanning {target.name}")
         print(f"  size {target.stat().st_size/1e6:.0f} MB")
-        res = scan_file(target, args.threshold, verbose=True)
+        res = scan_file(target, args.threshold, verbose=True, pad=args.pad, min_gap=args.min_gap)
         print(f"  result: {res}")
         return 0 if res.get("ok") else 1
 
@@ -255,7 +264,7 @@ def main(argv=None) -> int:
     for i, p in enumerate(todo, 1):
         rel = str(p.relative_to(root)).replace("\\", "/")
         print(f"[{i}/{len(todo)}] {rel}", flush=True)
-        res = scan_file(p, args.threshold)
+        res = scan_file(p, args.threshold, pad=args.pad, min_gap=args.min_gap)
         idx["files"][rel] = res
         if res.get("ok") and res["segments"]:
             print(f"    {len(res['segments'])} window(s), peak {res['peak']}", flush=True)
@@ -268,3 +277,4 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+

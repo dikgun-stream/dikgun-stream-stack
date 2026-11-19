@@ -288,6 +288,42 @@ at **0.004** laughter probability -- no laughter, correctly reported as none.
 A co-op R.E.P.O. recording peaked at **0.58** and produced 7 usable windows
 across the library so far.
 
+
+### Tuning how many clips you get
+
+Two knobs, and they pull in different directions.
+
+**`--threshold`** sets how confident the laughter has to be. On this library:
+
+| threshold | files qualifying |
+|---|---|
+| 0.05 | 25 |
+| 0.03 | 34 |
+| 0.02 | 48 |
+| 0.015 | 67 |
+| 0.01 | 92 |
+
+Worth knowing the shape of the data: 79 of 129 recordings peak below 0.02. A lot
+of them are solo ranked games with nobody to laugh at. Only four files peak
+above 0.5, and those are unmistakable.
+
+**`--pad`** sets the window either side of a detection. This matters more than it
+looks, because most recordings here are only 2-5 minutes long -- so the default
+90s padding immediately saturates the file. Measured on the first pass, 11 of 26
+windows covered 90% or more of their source, which makes the "library" feel like
+the same handful of clips repeating.
+
+```powershell
+# 3 minute windows (default) -- good for long recordings
+python laughter_scan.py --all --threshold 0.05
+
+# tighter windows -- more distinct clips out of short recordings
+python laughter_scan.py --all --threshold 0.02 --pad 35 --min-gap 6 --rescan
+```
+
+`--rescan` is required when changing either value; without it, already-scanned
+files are skipped and the old windows remain.
+
 ### Playing them
 
 `/api/clips/highlights?source=laughter` returns playable windows
