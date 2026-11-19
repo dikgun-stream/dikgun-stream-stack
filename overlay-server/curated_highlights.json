@@ -1,0 +1,62 @@
+{
+  "_comment": [
+    "Hand-labelled highlight moments. These are places a human (the streamer)",
+    "has confirmed something worth playing. They join the rotation alongside",
+    "machine-detected laughter and kills, tagged source=curated.",
+    "",
+    "Times are seconds into the file. Each entry becomes a window from start to",
+    "end. Add to this list whenever you hear something good -- it is the fastest",
+    "way to get a moment into the reel, and it doubles as labelled training data",
+    "for the audio detectors later."
+  ],
+  "items": [
+    {
+      "rel": "Hunt  Showdown/Hunt  Showdown 2025.03.23 - 21.34.00.04.DVR.mp4",
+      "game": "Hunt: Showdown",
+      "start": 108.0,
+      "end": 132.0,
+      "label": "dying yell",
+      "note": "user-labelled 2:00-2:01"
+    },
+    {
+      "rel": "Hunt  Showdown/Hunt  Showdown 2025.03.23 - 21.34.00.04.DVR.mp4",
+      "game": "Hunt: Showdown",
+      "start": 125.0,
+      "end": 149.0,
+      "label": "dying yell",
+      "note": "user-labelled 2:17-2:19"
+    },
+    {
+      "rel": "Hunt  Showdown/Hunt  Showdown 2025.03.23 - 21.34.00.04.DVR.mp4",
+      "game": "Hunt: Showdown",
+      "start": 155.0,
+      "end": 180.0,
+      "label": "dying yell x2",
+      "note": "user-labelled 2:47-2:50"
+    },
+    {
+      "rel": "Hunt  Showdown/Hunt  Showdown 2025.03.23 - 21.34.00.04.DVR.mp4",
+      "game": "Hunt: Showdown",
+      "start": 204.0,
+      "end": 230.0,
+      "label": "dying yell",
+      "note": "user-labelled 3:36-3:39"
+    },
+    {
+      "rel": "Hunt  Showdown/Hunt  Showdown 2024.08.25 - 16.51.35.12.DVR.mp4",
+      "game": "Hunt: Showdown",
+      "start": 0.0,
+      "end": 120.0,
+      "label": "funny round",
+      "note": "user called this whole clip funny"
+    },
+    {
+      "rel": "Hell Let Loose/Hell Let Loose 2025.01.12 - 10.22.19.21.DVR.mp4",
+      "game": "Hell Let Loose",
+      "start": 250.0,
+      "end": 285.0,
+      "label": "headshot dings",
+      "note": "user-labelled 4:26 onward"
+    }
+  ]
+}

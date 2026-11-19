@@ -723,9 +723,40 @@ async def api_clip_highlights(source: str = "all", limit: int = 400) -> dict:
         sources.append(("laughter", load("laughter_index.json"), None))
     if want in ("all", "kills", "kill"):
         sources.append(("kill", load("kill_index.json"), None))
+    if want in ("all", "curated"):
+        sources.append(("curated", load("curated_highlights.json"), None))
 
     scanned = 0
     for label, data, _ in sources:
+        if label == "curated":
+            # hand-labelled moments use a flat list, not the per-file index shape
+            entries = data.get("items") or []
+            scanned += len(entries)
+            for it in entries:
+                rel = str(it.get("rel", "")).replace("\\", "/")
+                meta = by_rel.get(rel)
+                try:
+                    start = float(it["start"])
+                    end = float(it["end"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if end - start < 5:
+                    continue
+                out.append({
+                    "rel": rel,
+                    "mount": (meta or {}).get("mount", "videos"),
+                    "game": (meta or {}).get("game") or it.get("game", ""),
+                    "title": (meta or {}).get("title") or rel.split("/")[-1],
+                    "start": round(start, 2),
+                    "len": round(end - start, 2),
+                    "kills": None,
+                    "laugh_at": None,
+                    "peak": None,
+                    "source": "curated",
+                    "label": it.get("label"),
+                })
+            continue
+
         files = data.get("files") or {}
         scanned += len(files)
         for rel, res in files.items():
