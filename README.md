@@ -431,6 +431,59 @@ own mount. `Q:\Game Clips` is organised into per-game subfolders (BF6, R6,
 Deadlock, EFT) which map to display names via an alias table in `clips.py` --
 without it every clip in that folder is labelled "Game Clips" on screen.
 
+
+## The highlight pool
+
+Everything the detectors find is merged by `/api/clips/highlights?source=all`
+and every clip-playing scene points at it. As of the last scan: **224 clips
+across 10 games.**
+
+| Game | laughter | kills | marker | curated | total |
+|---|---|---|---|---|---|
+| Apex Legends | 15 | 0 | 47 | 0 | 62 |
+| Battlefield 6 | 6 | 0 | 33 | 0 | 39 |
+| Rainbow Six Siege | 18 | 21 | 0 | 0 | 39 |
+| The Finals | 11 | 0 | 23 | 0 | 34 |
+| Deadlock | 7 | 0 | 10 | 0 | 17 |
+| Escape from Tarkov | 14 | 0 | 0 | 0 | 14 |
+| Hunt: Showdown | 5 | 0 | 0 | 5 | 10 |
+| Hell Let Loose | 3 | 0 | 1 | 0 | 4 |
+| R.E.P.O. | 3 | 0 | 0 | 0 | 3 |
+| PUBG | 2 | 0 | 0 | 0 | 2 |
+
+Four detection methods feed it:
+
+1. **laughter** -- YAMNet audio, all 219 recordings, 84 windows
+2. **kill** -- R6 red-X + score popup, 25 recordings, 21 windows
+3. **marker** -- per-game icon or text template (see below), gated at peak >= 0.75
+4. **curated** -- hand-labelled moments from `curated_highlights.json`
+
+### Marker coverage
+
+| Game | Signal | Method |
+|---|---|---|
+| Deadlock | red broken ring + white bars | colour-mask template |
+| Battlefield 6 | white skull icon | grayscale template |
+| Apex Legends | `ELIMINATED` / `KNOCKED DOWN` | OCR |
+| The Finals | `ELIMINATED` | OCR |
+
+Apex was verified 4 of 6 sampled detections by eye. Battlefield 6 has 2 confirmed
+kills. Deadlock's template is calibrated to the **2024** clips; the 2025 clips
+score ~0.60 and are filtered out by the confidence gate.
+
+### Two-stage scanning
+
+`--stage fast` runs one cheap OCR pass (`0.1s/frame`) at 1 fps; `--stage slow`
+runs every pass at higher fps. All 66 Apex clips take **14.8 minutes** on the
+fast path. Run the slow pass only over flagged clips.
+
+```powershell
+python marker_scan.py --root "C:\Users\JR\Videos" --all --game apex \
+  --folder "Apex Legends" --fps 1 --stage fast
+python marker_scan.py --root "C:\Users\JR\Videos" --all --game apex \
+  --folder "Apex Legends" --fps 6 --stage slow
+```
+
 ### Playing them
 
 `/api/clips/highlights?source=laughter` returns playable windows
