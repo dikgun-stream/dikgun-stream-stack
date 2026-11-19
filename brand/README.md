@@ -57,3 +57,55 @@ same brand.
 The trace lives in `brand/dg-vector.json` (polygon points, 3 shapes, 88 points).
 Re-render at any size by scaling the polygons - there is no raster upscaling
 anywhere in this pipeline.
+
+## Banners
+
+| Platform | File | Size | Notes |
+|---|---|---|---|
+| Twitch | `banners/twitch-banner-1200x480.png` | 1200x480 | Twitch profile banner |
+| YouTube | `banners/youtube-banner-2048x1152.png` | 2048x1152 | 16:9 channel banner |
+
+**YouTube banners are cropped hard.** Only the centre **1235x338** is guaranteed
+visible on phones and TVs. Everything in the YouTube banner is deliberately
+inside that band -- `youtube-safearea-check.png` draws the box, and
+`youtube-mobile-crop-preview.png` is literally what a phone shows. If you edit
+the banner, keep the lockup inside that band or it will be cut.
+
+The Twitch banner has no such constraint, which is why it carries the URL strip
+and the YouTube one does not.
+
+## Thumbnails
+
+`thumbnails/` has a 1280x720 cover per game plus `variety`:
+
+    Deadlock, Escape from Tarkov, Apex Legends, Rainbow Six Siege,
+    Battlefield 6, The Finals, Hunt Showdown, Hell Let Loose,
+    R.E.P.O., PUBG, Variety
+
+All one template: red field, ink type panel, DG mark, LIVE NOW chip. Upload the
+matching one per stream so every VOD reads as the same channel.
+
+### Why every VOD showed Siege cover art
+
+YouTube auto-generates a thumbnail when a stream ends if none was set, and for
+gaming streams it falls back to the game's cover art. That is why every finished
+stream showed Siege art regardless of what was actually played.
+
+Fix, per stream:
+
+1. **Before going live** -- YouTube Studio -> Live Control Room -> the stream ->
+   edit thumbnail -> upload the matching file from `thumbnails/`.
+2. That thumbnail carries over to the VOD when the stream ends.
+3. For past streams: YouTube Studio -> Content -> hover the video -> Edit ->
+   Thumbnail -> upload.
+
+There is no "default thumbnail for all future live streams" setting in YouTube
+Studio, so this is per-stream.
+
+### Automating it
+
+Setting thumbnails by API needs a Google OAuth client with the
+`https://www.googleapis.com/auth/youtube.upload` scope, plus `thumbnails.set`
+on each video. The dashboard does not hold YouTube credentials today -- title
+and category go through Streamer.bot, which owns those tokens. Automating
+thumbnails means adding a Google OAuth flow, which is a separate piece of work.
