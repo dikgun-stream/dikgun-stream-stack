@@ -179,6 +179,17 @@ appears, slash commands have not registered yet — see Troubleshooting.
 | Slash commands do not appear | Not synced yet. Commands are guild-scoped when `DISCORD_GUILD_ID` is set and appear in seconds; with it blank they are global and can take an hour. Restart the bot and reload Discord with **Ctrl + R**. |
 | `I cannot kick that member` | The bot's role sits below the target's role. Server Settings -> Roles -> drag the bot's role higher. |
 | `/clip` says file not reachable | `VIDEO_ROOT` / `VIDEOQ_ROOT` in `.env` do not match where the clips live. |
+### `guilds: 0` and `403 Forbidden (error code: 50001)`
+
+This means the bot logged in successfully but **is not in your server**. Those
+are two separate things: logging in authenticates the bot, being invited puts it
+somewhere. Discord cannot sync commands into a server the bot has never joined,
+so it returns a bare 403.
+
+Fix: open the invite URL from Part 6, pick your server, accept. Then press
+**Ctrl + C** in the bot window and run `python bot.py` again. It should print the
+server name and member count.
+
 | `overlay : UNREACHABLE` | The overlay server is not running on port 7475. |
 
 ---

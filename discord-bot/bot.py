@@ -131,21 +131,55 @@ started_at = time.time()
 _last_live = False
 
 
+INVITE_URL = (
+    "https://discord.com/oauth2/authorize?client_id={app}"
+    "&scope=bot+applications.commands&permissions=1102062021846"
+)
+
+
 @bot.event
 async def on_ready() -> None:
     print(f"  logged in as {bot.user} (id {bot.user.id})")
     print(f"  guilds: {len(bot.guilds)}   overlay: {OVERLAY}")
+
+    # A bot can log in fine without being in any server. Syncing then fails with
+    # a bare 403/50001 that says nothing useful, so say what is actually wrong.
+    if not bot.guilds:
+        print()
+        print("  !! The bot is not in any server yet.")
+        print("     Logging in is not the same as being invited.")
+        print()
+        print("     Open this and pick your server:")
+        print("     " + INVITE_URL.format(app=bot.user.id if bot.user else "1573094178739724339"))
+        print()
+        if GUILD_ID:
+            print(f"     DISCORD_GUILD_ID is set to {GUILD_ID}, but the bot cannot see it.")
+        print("     Then stop this (Ctrl+C) and run it again.")
+        print()
+        return
+
     try:
         if GUILD_ID:
-            guild = discord.Object(id=GUILD_ID)
-            bot.tree.copy_global_to(guild=guild)
-            await bot.tree.sync(guild=guild)
-            print(f"  synced commands to guild {GUILD_ID}")
+            guild = bot.get_guild(GUILD_ID)
+            if guild is None:
+                print(f"  !! DISCORD_GUILD_ID={GUILD_ID} is not one of the servers "
+                      f"this bot is in:")
+                for g in bot.guilds:
+                    print(f"       {g.id}  {g.name}")
+                print("     Fix DISCORD_GUILD_ID in .env, or leave it blank.")
+            else:
+                bot.tree.copy_global_to(guild=guild)
+                await bot.tree.sync(guild=guild)
+                print(f"  synced commands to {guild.name} ({guild.id})")
         else:
             await bot.tree.sync()
             print("  synced commands globally (can take up to an hour to appear)")
     except Exception as exc:  # noqa: BLE001
         print(f"  !! command sync failed: {exc}")
+
+    for g in bot.guilds:
+        print(f"  server: {g.name}  ({g.id})  {len(g.members)} members")
+
     if not watch_stream.is_running():
         watch_stream.start()
 
