@@ -17,6 +17,7 @@ particular thing is automatic.
 | Alerts: follow / sub / resub / gift / raid / bits | Working |
 | Overlays: alerts, chat, goals, topic, input | Working |
 | **Neosoviet scenes: Starting Soon / BRB / Ending** | **Working — horizontal + vertical** |
+| **Clip player: plays local recordings, labels the game** | **Working — horizontal + vertical** |
 | **Scenes show the live game/category from the dashboard** | **Working** |
 | **Deadlock panel: K/D/A, W/L, item tower with real art** | **Working** |
 | Chat commands: `!hint`, `!hints`, `!vote`, `!death`/`!kill`, `!hype` | Working |
@@ -73,10 +74,11 @@ overlay-server/     FastAPI app: REST + WebSocket hub + OBS proxy + Twitch IRC
   twitch_irc.py     anonymous IRC reader -> events
   deadlock_hud.py   screen readers: scoreboard, kill/assist badges, item grid
   input_capture.py  polling key watcher (no low-level hook: anti-cheat safe)
+  clips.py          indexes local recordings into a per-game clip library
   public/           dashboard, chatroom, and the overlays
     assets/         shared scene design system (scene.css / scene.js)
     overlays/       alerts, chat, goals, topic, input, deadlock,
-                    starting-soon, brb, ending
+                    starting-soon, brb, ending, clips
     items/          Deadlock item card art served to the overlay
 streamer-mode/      desktop automation
   Streamer-Mode.ps1 window tiling + taskbar/icons + app lifecycle
@@ -130,6 +132,45 @@ Trigger one with:
 Invoke-RestMethod -Uri http://127.0.0.1:7475/api/event -Method Post `
   -ContentType 'application/json' -Body '{"type":"kill","channel":"scenes"}'
 ```
+
+## Clip library
+
+`overlay-server/clips.py` indexes the OBS DVR recordings kept under
+`C:\Users\JR\Videos` (override with the `DIKGUN_CLIPS` environment variable).
+The folder tree is already organised per game, so the folder name becomes the
+game label. Several folders are alternate spellings of the same game
+("R6siege" / "Tom Clancy's Rainbow Six  Siege"), so `clips.py` normalises them
+through an explicit alias table rather than guessing.
+
+- `GET /api/clips` — index + per-game counts
+- `GET /api/clips?game=The%20Finals` — filtered
+- `GET /videos/<relative path>` — the media itself, with HTTP range support
+- `/overlay/clips` — the player (`?v=1` for vertical)
+
+The player is a `<video>` element in a browser source, not an OBS media source,
+so the game label and the footage stay in sync in one source.
+
+### Player options
+
+| Param | Default | Meaning |
+|---|---|---|
+| `game=NAME` | all | only play that game's folder |
+| `len=45` | 45 | seconds per clip before advancing (`0` = whole file) |
+| `start=0.12` | 0.12 | seek this fraction in, plus a random 0–30 s jitter |
+| `mute=0` | muted | unmute |
+| `shuffle=0` | shuffle | play in order instead of random |
+| `v=1` | horizontal | vertical composition |
+
+The random seek exists because these are full session recordings, not trimmed
+clips — starting every file at 0 usually lands on a menu or the tail of the
+previous round.
+
+Scenes: `SHOW_Clips` and `V_SHOW_Clips`. To use it as a background instead,
+drop `OVL_Clips` into `SHOW_BRB` and delete its opaque scene layer.
+
+Durations are probed with `ffprobe` once in the background and cached in
+`overlay-server/clips_cache.json` (gitignored). Without `ffprobe` the player
+still works — it just cannot size the random seek window.
 
 ## Prerequisites
 

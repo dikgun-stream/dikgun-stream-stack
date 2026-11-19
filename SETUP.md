@@ -212,3 +212,42 @@ Invoke-RestMethod -Uri http://127.0.0.1:7475/api/event -Method Post `
 
 This is intentionally inert for now: the in-game scenes stay uncluttered, and
 only the waiting/BRB/ending scenes listen.
+
+## Clips
+
+`SHOW_Clips` and `V_SHOW_Clips` play the local recordings indexed from
+`C:\Users\JR\Videos`. The index is built at request time from the folder tree,
+so dropping a new recording into a game folder is enough — no rebuild step.
+
+### Wiring
+
+1. Add a **Browser** source.
+2. Size it to the canvas (1920x1080 or 1080x1920).
+3. URL `http://127.0.0.1:7475/overlay/clips` (vertical adds `?v=1`).
+4. Tick **Shutdown source when not visible** — a video source left running costs
+   real CPU and will not be shown anyway.
+
+### Pointing it somewhere else
+
+```powershell
+$env:DIKGUN_CLIPS = 'D:\Recordings'
+```
+
+Then restart the server. The mount is created at startup, so a change needs a
+restart rather than a refresh.
+
+### Choosing what plays
+
+Append to the URL:
+
+- `?game=The%20Finals` — one game only
+- `?len=90` — longer window per clip
+- `?shuffle=0` — play oldest-to-newest instead of random
+- `?mute=0` — unmute (muted by default, since this runs under a live stream)
+
+### Why it seeks instead of starting at zero
+
+The recordings are full OBS DVR sessions, not trimmed clips — most are 300 MB to
+3 GB. Playing from 0 lands on a menu or the previous round, so the player jumps
+to `start` (default 12%) plus a random jitter, plays `len` seconds, then
+advances. Set `start=0&len=0` to play whole files end to end.

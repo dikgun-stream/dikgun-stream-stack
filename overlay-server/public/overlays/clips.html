@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Clip Player</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Rubik:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/scene.css">
+<style>
+  /* Full-bleed footage with a neosoviet plate carrying the game it came from.
+
+     Query parameters:
+       game=NAME    only play clips from that game folder
+       start=0.15   seek to this fraction of the file before playing
+       len=45       play this many seconds, then advance (0 = play to the end)
+       mute=0       unmute (default is muted: this runs under a live stream)
+       shuffle=0    play in order instead of randomly
+  */
+
+  html, body { background: #000; }
+
+  #vid {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    z-index: 1;
+    background: #000;
+  }
+
+  /* darken the lower third so the plate always has contrast, without a blur */
+  #shade {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    height: 42%;
+    z-index: 2; pointer-events: none;
+    background: linear-gradient(to top, rgba(10,9,8,.92), rgba(10,9,8,0));
+  }
+
+  #plate {
+    position: absolute; z-index: 5;
+    left: 0; right: 0; bottom: 0;
+    display: flex; align-items: stretch;
+    background: var(--ink);
+    border-top: var(--rule-thick) solid var(--red);
+  }
+
+  .game-cell {
+    flex: 1 1 auto; min-width: 0;
+    padding: 1.8vmin var(--u8) 1.8vmin calc(var(--u12) + 40px);
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .game-cell .k {
+    font-family: var(--mono);
+    font-size: 1.15vmin; letter-spacing: .34em;
+    color: var(--steel);
+    margin-bottom: 4px;
+  }
+  .game-cell .v {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 5.2vmin;
+    line-height: .92;
+    letter-spacing: -.005em;
+    text-transform: uppercase;
+    color: var(--paper-hi);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .game-cell .v.is-long { font-size: 3.9vmin; }
+
+  /* the red stamp: which game this is, held at a fixed size */
+  .stamp {
+    flex: 0 0 auto;
+    width: 26vmin;
+    background: var(--red);
+    color: var(--paper-hi);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center;
+    padding: 1.4vmin 1vmin;
+  }
+  .stamp .n {
+    font-family: var(--display); font-weight: 700;
+    font-size: 3.4vmin; line-height: 1;
+    text-transform: uppercase;
+  }
+  .stamp .l {
+    font-family: var(--mono);
+    font-size: 1vmin; letter-spacing: .3em;
+    margin-top: 4px; opacity: .85;
+  }
+
+  #title {
+    position: absolute; z-index: 5;
+    left: var(--u12); top: var(--u8);
+    font-family: var(--mono);
+    font-size: 1.5vmin; letter-spacing: .2em;
+    color: rgba(246,241,230,.85);
+    text-shadow: 0 2px 10px rgba(0,0,0,.9);
+    max-width: 70%;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* thin progress rule along the very top */
+  #prog {
+    position: absolute; z-index: 6; top: 0; left: 0;
+    height: 4px; width: 0%;
+    background: var(--red);
+    transition: width .25s linear;
+  }
+
+  #msg {
+    position: absolute; inset: 0; z-index: 4;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 2vmin; letter-spacing: .2em;
+    color: var(--steel); text-transform: uppercase;
+  }
+  #msg.hide { display: none; }
+
+  /* ---- vertical ---------------------------------------------------------- */
+  .v .game-cell { padding: 2.4vmin var(--u4) 2.4vmin calc(var(--u6) + 20px); }
+  .v .game-cell .v { font-size: 5.6vmin; white-space: normal; }
+  .v .game-cell .v.is-long { font-size: 4.4vmin; }
+  .v .stamp { width: 22vmin; }
+  .v .stamp .n { font-size: 3.2vmin; }
+  .v #title { left: var(--u6); right: var(--u6); max-width: none; font-size: 1.8vmin; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <video id="vid" playsinline preload="auto"></video>
+  <div id="shade"></div>
+  <div id="prog"></div>
+  <div id="title"></div>
+  <div id="msg">INDEXING CLIPS</div>
+
+  <div id="plate">
+    <div class="game-cell">
+      <span class="k">FOOTAGE FROM</span>
+      <span class="v" id="game">-</span>
+    </div>
+    <div class="stamp">
+      <span class="n" id="idx">-- / --</span>
+      <span class="l">CLIP</span>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const params = new URLSearchParams(location.search);
+  const vertical = params.get('v') === '1' || window.innerHeight > window.innerWidth * 1.2;
+  if (vertical) document.documentElement.classList.add('v');
+
+  const onlyGame = params.get('game') || '';
+  const startFrac = Number(params.get('start') ?? 0.12);
+  const playLen = Number(params.get('len') ?? 45);       // seconds; 0 = whole file
+  const muted = params.get('mute') !== '0';
+  const shuffle = params.get('shuffle') !== '0';
+
+  const vid = document.getElementById('vid');
+  const gameEl = document.getElementById('game');
+  const titleEl = document.getElementById('title');
+  const idxEl = document.getElementById('idx');
+  const msgEl = document.getElementById('msg');
+  const progEl = document.getElementById('prog');
+
+  vid.muted = muted;
+  vid.volume = muted ? 0 : 1;
+
+  let clips = [];
+  let order = [];
+  let pos = 0;
+  let stopAt = 0;
+  let deadline = 0;
+
+  function encPath(rel) {
+    return '/videos/' + rel.split('/').map(encodeURIComponent).join('/');
+  }
+
+  function shuffleInto(list) {
+    const a = list.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function labelGame(name) {
+    gameEl.textContent = (name || 'UNKNOWN').toUpperCase();
+    gameEl.classList.toggle('is-long', (name || '').length > 16);
+  }
+
+  function play(index) {
+    if (!order.length) {
+      msgEl.textContent = 'NO CLIPS FOUND';
+      msgEl.classList.remove('hide');
+      return;
+    }
+    pos = ((index % order.length) + order.length) % order.length;
+    const c = order[pos];
+
+    labelGame(c.game);
+    titleEl.textContent = c.title || c.file;
+    idxEl.textContent = `${pos + 1} / ${order.length}`;
+    msgEl.classList.add('hide');
+    progEl.style.width = '0%';
+
+    vid.src = encPath(c.rel);
+
+    const seek = () => {
+      // jump into the recording so clips do not always open on a menu screen
+      const dur = Number.isFinite(vid.duration) && vid.duration > 30 ? vid.duration : 0;
+      const from = Number.isFinite(startFrac) && startFrac > 0 ? startFrac : 0;
+      // never start too near the end, or the window is empty
+      const maxStart = Math.max(0, dur - Math.max(20, playLen || 20));
+      const target = Math.min(maxStart, dur * from + Math.random() * 30);
+      if (target > 1 && dur) {
+        try { vid.currentTime = target; } catch { /* not seekable yet */ }
+      }
+      deadline = playLen > 0 ? Date.now() + playLen * 1000 : 0;
+    };
+
+    if (vid.readyState >= 1) seek();
+    else vid.addEventListener('loadedmetadata', seek, { once: true });
+
+    vid.play().catch(() => {
+      // autoplay refused: retry muted once, then give up quietly
+      vid.muted = true;
+      vid.play().catch(() => { msgEl.textContent = 'CLICK TO PLAY'; msgEl.classList.remove('hide'); });
+    });
+  }
+
+  function advance() { play(pos + 1); }
+
+  vid.addEventListener('ended', advance);
+  vid.addEventListener('error', () => {
+    // a missing codec should not stall the loop
+    setTimeout(advance, 1500);
+  });
+
+  // watchdog: honour the play window even if the file reports a bad duration
+  setInterval(() => {
+    if (!deadline || vid.paused) return;
+    if (Date.now() > deadline) { deadline = 0; advance(); }
+  }, 1000);
+
+  vid.addEventListener('timeupdate', () => {
+    if (Number.isFinite(vid.duration) && vid.duration > 0) {
+      progEl.style.width = `${(vid.currentTime / vid.duration) * 100}%`;
+    }
+  });
+
+  async function load() {
+    try {
+      const q = onlyGame ? `?game=${encodeURIComponent(onlyGame)}` : '';
+      const r = await fetch(`/api/clips${q}`, { cache: 'no-store' });
+      const data = await r.json();
+      clips = data.clips || [];
+      if (!clips.length) {
+        msgEl.textContent = data.available === false ? 'CLIP FOLDER MISSING' : 'NO CLIPS FOUND';
+        msgEl.classList.remove('hide');
+        return;
+      }
+      order = shuffle ? shuffleInto(clips) : clips.slice();
+      // start on the newest clip for order mode, random for shuffle
+      play(0);
+    } catch (e) {
+      msgEl.textContent = 'CLIP API UNREACHABLE';
+      msgEl.classList.remove('hide');
+    }
+  }
+
+  // refresh the pool periodically so newly recorded clips join the rotation
+  load();
+  setInterval(load, 10 * 60 * 1000);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight') advance();
+    if (e.key === 'ArrowLeft') play(pos - 1);
+  });
+})();
+</script>
+</body>
+</html>

@@ -23,6 +23,8 @@ $targets = [ordered]@{
     'OVL_StartingSoon_V' = '/overlay/starting-soon?v=1'
     'OVL_BRB_V'          = '/overlay/brb?v=1'
     'OVL_Ending_V'       = '/overlay/ending?v=1'
+    'OVL_Clips'           = '/overlay/clips'
+    'OVL_Clips_V'         = '/overlay/clips?v=1'
     'OVL_Deadlock_V'     = '/overlay/deadlock?left=26&bottom=640&width=150'
     'OVL_Alerts'         = '/overlay/alerts'
     'OVL_Alerts_V'       = '/overlay/alerts'
@@ -58,3 +60,4 @@ try {
 
 Write-Host ''
 Write-Host 'Done. Scenes will re-fetch their pages on next display.'
+

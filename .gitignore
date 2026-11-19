@@ -24,3 +24,6 @@ shot-*.png
 # Local machine state
 *.log
 state.json
+
+# ffprobe duration cache (rebuilt on demand)
+overlay-server/clips_cache.json

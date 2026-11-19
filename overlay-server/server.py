@@ -534,6 +534,11 @@ async def lifespan(app: FastAPI):
     tasks.append(asyncio.create_task(_kill_watch_loop(), name="kill-watch"))
     tasks.append(asyncio.create_task(_item_watch_loop(), name="item-watch"))
     tasks.append(asyncio.create_task(_capture_janitor(), name="capture-janitor"))
+    # probe clip durations once in the background; the player works without them
+    try:
+        clip_lib.start_duration_fill(CLIPS_ROOT, CLIPS_CACHE)
+    except Exception:  # noqa: BLE001
+        pass
     log.info("overlay server ready on http://127.0.0.1:7475")
     try:
         yield
@@ -557,6 +562,15 @@ _ITEMS_DIR.mkdir(parents=True, exist_ok=True)
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 app.mount("/items", StaticFiles(directory=str(_ITEMS_DIR)), name="items")
+
+# Clip library. OBS DVR recordings live in per-game folders; StaticFiles serves
+# them with HTTP range support, which is what <video> needs to seek.
+import clips as clip_lib  # noqa: E402
+
+CLIPS_ROOT = Path(os.environ.get("DIKGUN_CLIPS", r"C:\Users\JR\Videos"))
+CLIPS_CACHE = Path(__file__).with_name("clips_cache.json")
+if CLIPS_ROOT.is_dir():
+    app.mount("/videos", StaticFiles(directory=str(CLIPS_ROOT)), name="videos")
 
 # Shared scene stylesheet/script. The /overlay/{name} route appends ".html", so
 # asset files cannot live under /overlay and need their own mount.
@@ -632,6 +646,23 @@ async def status() -> dict:
             "connected": IRC.connected if IRC else False,
             "lastError": IRC.last_error if IRC else None,
         },
+    }
+
+
+@app.get("/api/clips")
+async def api_clips(game: str | None = None, limit: int = 400) -> dict:
+    """Index of local recordings, grouped by the game folder they came from."""
+    items = await asyncio.to_thread(clip_lib.scan, CLIPS_ROOT, CLIPS_CACHE)
+    total = len(items)
+    if game:
+        items = [c for c in items if c["game"].lower() == game.lower()]
+    return {
+        "root": str(CLIPS_ROOT),
+        "available": CLIPS_ROOT.is_dir(),
+        "total": total,
+        "count": len(items),
+        "games": clip_lib.games(items),
+        "clips": items[: max(1, limit)],
     }
 
 
