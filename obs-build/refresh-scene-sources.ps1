@@ -17,14 +17,18 @@ $ErrorActionPreference = 'Stop'
 
 # scene sources that render overlay pages, with their page path
 $targets = [ordered]@{
-    'OVL_StartingSoon'   = '/overlay/starting-soon'
-    'OVL_BRB'            = '/overlay/brb'
-    'OVL_Ending'         = '/overlay/ending'
-    'OVL_StartingSoon_V' = '/overlay/starting-soon?v=1'
-    'OVL_BRB_V'          = '/overlay/brb?v=1'
-    'OVL_Ending_V'       = '/overlay/ending?v=1'
-    'OVL_Clips'           = '/overlay/clips'
-    'OVL_Clips_V'         = '/overlay/clips?v=1'
+    # Starting Soon / BRB / Ending now all run the clip player with chrome,
+    # so there is exactly one video pipeline to keep working.
+    'OVL_StartingSoon'   = '/overlay/clips?source=laughter&title=Starting%20Soon&sub=Grab%20a%20drink&minutes=5'
+    'OVL_BRB'            = '/overlay/clips?source=laughter&title=Be%20Right%20Back&sub=Away%20for%20a%20minute'
+    'OVL_Ending'         = '/overlay/clips?source=laughter&title=Thanks%20For%20Watching&sub=Follow%20the%20channel'
+    'OVL_Clips'          = '/overlay/clips?source=laughter'
+
+    'OVL_StartingSoon_V' = '/overlay/clips?source=laughter&v=1&title=Starting%20Soon&sub=Grab%20a%20drink&minutes=5'
+    'OVL_BRB_V'          = '/overlay/clips?source=laughter&v=1&title=Be%20Right%20Back&sub=Away%20for%20a%20minute'
+    'OVL_Ending_V'       = '/overlay/clips?source=laughter&v=1&title=Thanks%20For%20Watching&sub=Follow%20the%20channel'
+    'OVL_Clips_V'        = '/overlay/clips?source=laughter&v=1'
+
     'OVL_Deadlock_V'     = '/overlay/deadlock?left=26&bottom=640&width=150'
     'OVL_Alerts'         = '/overlay/alerts'
     'OVL_Alerts_V'       = '/overlay/alerts'
