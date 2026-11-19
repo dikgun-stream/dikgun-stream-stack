@@ -476,24 +476,36 @@ async def on_member_join(member: discord.Member) -> None:
 
 
 # ---------------------------------------------------------------- provisioning
-async def provision() -> None:
+async def provision() -> int:
     """Create the channel and role structure described in blueprint.json.
 
     Idempotent: anything that already exists by name is left alone, so it is safe
     to re-run after editing the blueprint.
+
+    Every step is individually guarded. The first version raised TypeError on the
+    first channel because create_text_channel has no `type` argument -- the
+    exception escaped into the event handler, was swallowed, and the process
+    exited 0 having created nothing but roles. Silent partial success is worse
+    than a loud failure, so failures are counted and reported.
     """
     if not bot.guilds:
-        raise SystemExit("bot is in no guilds - invite it first")
+        print("  !! the bot is in no servers - invite it first")
+        return 1
     guild = bot.guilds[0]
     print(f"  provisioning {guild.name}")
 
     bp = json.loads((HERE / "blueprint.json").read_text(encoding="utf-8"))
+    made = skipped = failed = 0
 
     existing_roles = {r.name: r for r in guild.roles}
     roles: dict[str, discord.Role] = {}
     for spec in bp.get("roles", []):
         role = existing_roles.get(spec["name"])
-        if role is None:
+        if role is not None:
+            roles[spec["key"]] = role
+            skipped += 1
+            continue
+        try:
             role = await guild.create_role(
                 name=spec["name"],
                 colour=discord.Colour(int(spec.get("color", "9BA3AF"), 16)),
@@ -501,40 +513,105 @@ async def provision() -> None:
                 mentionable=spec.get("mentionable", False),
                 reason="blueprint",
             )
-            print(f"    + role {spec['name']}")
-        roles[spec["key"]] = role
+            roles[spec["key"]] = role
+            made += 1
+            print(f"    + role      {spec['name']}")
+        except Exception as exc:  # noqa: BLE001
+            failed += 1
+            print(f"    ! role      {spec['name']}: {type(exc).__name__}: {exc}")
 
     for cat_spec in bp.get("categories", []):
-        cat = discord.utils.get(guild.categories, name=cat_spec["name"])
-        if cat is None:
-            cat = await guild.create_category(cat_spec["name"], reason="blueprint")
-            print(f"    + category {cat_spec['name']}")
-
-        if cat_spec.get("staff_only"):
-            await cat.set_permissions(guild.default_role, view_channel=False)
-            if "mod" in roles:
-                await cat.set_permissions(roles["mod"], view_channel=True)
-
-        for ch_spec in cat_spec.get("channels", []):
-            name = ch_spec["name"]
-            kind = ch_spec.get("type", "text")
-            if discord.utils.get(cat.channels, name=name) is not None:
-                continue
-            if kind in ("text", "announcement"):
-                ch_type = (discord.ChannelType.news if kind == "announcement"
-                           else discord.ChannelType.text)
-                ch = await guild.create_text_channel(
-                    name, category=cat, topic=ch_spec.get("topic", ""),
-                    type=ch_type, reason="blueprint")
-                if ch_spec.get("readonly"):
-                    await ch.set_permissions(guild.default_role,
-                                             send_messages=False)
+        try:
+            cat = discord.utils.get(guild.categories, name=cat_spec["name"])
+            if cat is None:
+                cat = await guild.create_category(cat_spec["name"], reason="blueprint")
+                made += 1
+                print(f"    + category  {cat_spec['name']}")
             else:
-                await guild.create_voice_channel(name, category=cat,
-                                                 reason="blueprint")
-            print(f"    + {kind:12} {cat_spec['name']}/{name}")
+                skipped += 1
 
+            if cat_spec.get("staff_only"):
+                # A bot cannot edit permissions for a role at or above its own
+                # highest role. On a fresh server every role lands on the same
+                # position, so this is the normal first-run outcome, not a bug -
+                # but it must not abort the rest of the category.
+                try:
+                    await cat.set_permissions(guild.default_role, view_channel=False)
+                except discord.Forbidden:
+                    print(f"      ! could not hide {cat_spec['name']} from @everyone")
+                # Denying @everyone also denies the bot, since its own role
+                # inherits that. Without an explicit allow the bot cannot manage
+                # the very channels it is about to create inside this category.
+                try:
+                    await cat.set_permissions(guild.me.top_role, view_channel=True)
+                except discord.Forbidden:
+                    print("      ! could not grant the bot access to "
+                          f"{cat_spec['name']} - drag its role higher")
+                mod_role = roles.get("mod")
+                if mod_role is not None:
+                    if mod_role.position >= guild.me.top_role.position:
+                        print(f"      ! @{mod_role.name} is not below the bot's role "
+                              f"({guild.me.top_role.name}), so its access to "
+                              f"{cat_spec['name']} was not granted.")
+                        print(f"        Fix: Server Settings -> Roles, drag "
+                              f"{guild.me.top_role.name} above {mod_role.name}, "
+                              f"then run --provision again.")
+                    else:
+                        try:
+                            await cat.set_permissions(mod_role, view_channel=True)
+                        except discord.Forbidden:
+                            print(f"      ! could not grant @{mod_role.name} access")
+
+            for ch_spec in cat_spec.get("channels", []):
+                name = ch_spec["name"]
+                if discord.utils.get(cat.channels, name=name) is not None:
+                    skipped += 1
+                    continue
+                kind = ch_spec.get("type", "text")
+                try:
+                    if kind == "voice":
+                        await guild.create_voice_channel(name, category=cat,
+                                                         reason="blueprint")
+                    else:
+                        # announcement channels are create_text_channel(news=True);
+                        # there is no `type` argument. Servers without the NEWS
+                        # feature reject news=True, so fall back to a plain text
+                        # channel rather than losing the channel entirely.
+                        news = kind == "announcement"
+                        try:
+                            ch = await guild.create_text_channel(
+                                name, category=cat,
+                                topic=ch_spec.get("topic", "") or "",
+                                news=news, reason="blueprint")
+                        except discord.HTTPException:
+                            ch = await guild.create_text_channel(
+                                name, category=cat,
+                                topic=ch_spec.get("topic", "") or "",
+                                reason="blueprint")
+                            if news:
+                                print(f"      (news not available, made text channel)")
+                        if ch_spec.get("readonly"):
+                            try:
+                                await ch.set_permissions(guild.default_role,
+                                                         send_messages=False)
+                            except discord.Forbidden:
+                                print(f"      ! could not lock {name} to read-only")
+                    made += 1
+                    print(f"    + {kind:11} {cat_spec['name']}/{name}")
+                except Exception as exc:  # noqa: BLE001
+                    failed += 1
+                    print(f"    ! {kind:11} {name}: {type(exc).__name__}: {exc}")
+        except Exception as exc:  # noqa: BLE001
+            failed += 1
+            print(f"    ! category  {cat_spec.get('name')}: {type(exc).__name__}: {exc}")
+
+    print()
+    print(f"  created {made}, already existed {skipped}, failed {failed}")
+    if failed:
+        print("  Some steps failed - see the lines marked ! above.")
+        return 1
     print("  done. AutoMod rules must be set by hand - see README.")
+    return 0
 
 
 async def check() -> int:
@@ -574,19 +651,26 @@ def main() -> int:
         return 1
 
     if args.provision:
+        status = {"code": 1}
+
         async def runner() -> None:
             @bot.event
             async def on_ready_runner() -> None:
                 try:
-                    await provision()
+                    status["code"] = await provision()
+                except Exception:  # noqa: BLE001
+                    import traceback
+                    traceback.print_exc()
+                    status["code"] = 1
                 finally:
                     await overlay.close()
                     await bot.close()
 
             bot.on_ready = on_ready_runner  # type: ignore[assignment]
             await bot.start(TOKEN)
+
         asyncio.run(runner())
-        return 0
+        return status["code"]
 
     bot.run(TOKEN, log_handler=None)
     return 0

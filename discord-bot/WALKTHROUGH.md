@@ -179,6 +179,24 @@ appears, slash commands have not registered yet — see Troubleshooting.
 | Slash commands do not appear | Not synced yet. Commands are guild-scoped when `DISCORD_GUILD_ID` is set and appear in seconds; with it blank they are global and can take an hour. Restart the bot and reload Discord with **Ctrl + R**. |
 | `I cannot kick that member` | The bot's role sits below the target's role. Server Settings -> Roles -> drag the bot's role higher. |
 | `/clip` says file not reachable | `VIDEO_ROOT` / `VIDEOQ_ROOT` in `.env` do not match where the clips live. |
+### `@Moderator is not below the bot's role` / `___hidden___` channels
+
+On a fresh server every role lands on the **same position**, and Discord will not
+let a bot grant permissions to, or even see channels visible only to, a role that
+is not strictly below its own.
+
+The symptom is that the STAFF category and its channels show as `___hidden___`,
+and `--provision` warns it could not grant `@Moderator` access.
+
+Fix, once:
+
+1. **Server Settings -> Roles**
+2. Drag **DikGunBot** to the very top of the list
+3. Save, then run `python bot.py --provision` again
+
+It is safe to re-run. Existing channels are skipped and only the missing
+permission overwrites are applied.
+
 ### `guilds: 0` and `403 Forbidden (error code: 50001)`
 
 This means the bot logged in successfully but **is not in your server**. Those
