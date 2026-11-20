@@ -1,0 +1,18 @@
+{
+  "_note": "Picture modes exposed by the XL2540 over DDC/CI are 4, 5, 8 and 11 (0x04, 0x05, 0x08, 0x0B). Which number maps to which on-screen mode is not documented, so run 'benq-display.ps1 -Identify' and note the one that looks like night. brightness/contrast are 0-100; mode may be null to leave the monitor's current picture mode alone.",
+  "day": {
+    "mode": 5,
+    "brightness": 50,
+    "contrast": 50
+  },
+  "night": {
+    "mode": null,
+    "brightness": 15,
+    "contrast": 45
+  },
+  "stream": {
+    "mode": 5,
+    "brightness": 50,
+    "contrast": 50
+  }
+}
