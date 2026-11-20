@@ -49,7 +49,31 @@ scanner behind it. Scenes do not.
 | **Stream Dock AJAZZ** | For the deck profile |
 | **RivaTuner 2.24** (optional) | Display profiles only |
 
-## 4. Order of operations
+## 4. One command, or step by step
+
+```powershell
+powershell -File install.ps1 -Check     # report what is present / missing
+powershell -File install.ps1 -All       # install everything and wire it up
+```
+
+`-All` runs every stage: winget software, OBS plugins, python deps, config,
+scene collection, YAMNet, deck profile. Each stage skips what already exists and
+backs up before overwriting, so it is safe to re-run.
+
+Stages can be run alone: `-Software`, `-Plugins`, `-Deps`, `-Scenes`, `-Model`,
+`-Deck`, `-Config`.
+
+What it cannot do, and will list at the end as manual steps:
+
+- install **Stream Dock AJAZZ** or **RivaTuner** - neither is on winget
+- sign in to Twitch/YouTube - stream keys are per account
+- enable obs-websocket inside OBS
+- import the Streamer.bot actions and connect accounts
+- the Discord bot token (`discord-bot/setup.ps1` does that interactively)
+
+### Doing it by hand
+
+## 4b. Order of operations
 
 ```powershell
 # 0. clone

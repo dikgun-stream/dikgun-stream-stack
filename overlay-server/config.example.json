@@ -24,9 +24,9 @@
     }
   },
   "labels": {
-    "last_follower": "—",
-    "last_sub": "—",
-    "last_tip": "—"
+    "last_follower": "\u2014",
+    "last_sub": "\u2014",
+    "last_tip": "\u2014"
   },
   "chat": {
     "max_messages": 12
@@ -35,12 +35,12 @@
     "url": "ws://127.0.0.1:4455"
   },
   "twitch": {
-    "channel": "your_twitch_channel",
+    "channel": "dikgun",
     "enabled": true
   },
   "stream": {
-    "title": "",
-    "game": ""
+    "title": "Gear donation center. ",
+    "game": "Escape from Tarkov"
   },
   "topic": {
     "text": "",
@@ -57,13 +57,281 @@
   },
   "hints": [],
   "counters": {
-    "deaths": 0,
+    "deaths": 1,
     "kills": 0
   },
   "poll": {
     "active": false,
-    "question": "",
-    "options": [],
-    "votes": {}
+    "question": "Next map?",
+    "options": [
+      "Reserve",
+      "Customs",
+      "Woods"
+    ],
+    "votes": {
+      "alice": "Reserve",
+      "bob": "Customs",
+      "carol": "Reserve",
+      "dave": "Woods"
+    }
+  },
+  "deadlock": {
+    "boon": 0,
+    "souls": 0,
+    "spirit": 0,
+    "gun": 0,
+    "vitality": 0,
+    "kills": 2,
+    "assists": 0,
+    "damage": 0,
+    "items": [
+      {
+        "name": "Tankbuster",
+        "icon": "/items/Tankbuster.png"
+      },
+      {
+        "name": "Stamina Mastery",
+        "icon": "/items/Stamina_Mastery.png"
+      },
+      {
+        "name": "Rapid Recharge",
+        "icon": "/items/Rapid_Recharge.png"
+      },
+      {
+        "name": "Boundless Spirit",
+        "icon": "/items/Boundless_Spirit.png"
+      }
+    ],
+    "account_id": 162773939,
+    "session_start": 1795037334,
+    "wins": 0,
+    "losses": 3,
+    "last_result": {
+      "match_id": 140437151,
+      "won": false,
+      "kills": 3,
+      "deaths": 10,
+      "assists": 20,
+      "start_time": 1795135685
+    },
+    "player_name": "Schmidley",
+    "deaths": 7,
+    "damage_mode": "outgoing",
+    "damage_total": 0,
+    "damage_life": 0,
+    "damage_in": 0,
+    "match_started": 1795101725,
+    "last_deaths": 7
+  },
+  "checklists": {
+    "startup": [
+      {
+        "id": "startup-0",
+        "text": "Dashboard category set - this sets Twitch AND YouTube",
+        "done": false
+      },
+      {
+        "id": "startup-1",
+        "text": "Stream title set",
+        "done": false
+      },
+      {
+        "id": "startup-2",
+        "text": "Scene collection is DikGun",
+        "done": false
+      },
+      {
+        "id": "startup-3",
+        "text": "Horizontal scene matches the game (GAME_*)",
+        "done": false
+      },
+      {
+        "id": "startup-4",
+        "text": "Vertical canvas scene matches the game (V_GAME_*)",
+        "done": false
+      },
+      {
+        "id": "startup-5",
+        "text": "Game capture shows the game, not a black screen",
+        "done": false
+      },
+      {
+        "id": "startup-6",
+        "text": "Camera framing ok - nothing embarrassing behind me",
+        "done": false
+      },
+      {
+        "id": "startup-7",
+        "text": "Mic unmuted and levels moving",
+        "done": false
+      },
+      {
+        "id": "startup-8",
+        "text": "Desktop/game audio audible in the mixer",
+        "done": false
+      },
+      {
+        "id": "startup-9",
+        "text": "Recording tracks correct: game=1, mic=2, overlays=3",
+        "done": false
+      },
+      {
+        "id": "startup-10",
+        "text": "Streamer.bot running (alerts will not fire without it)",
+        "done": false
+      },
+      {
+        "id": "startup-11",
+        "text": "Chat overlay connected and scrolling",
+        "done": false
+      },
+      {
+        "id": "startup-12",
+        "text": "Clip player has content (Starting Soon shows footage)",
+        "done": false
+      },
+      {
+        "id": "startup-13",
+        "text": "Windows Focus Assist / Do Not Disturb on",
+        "done": false
+      },
+      {
+        "id": "startup-14",
+        "text": "Discord set to Do Not Disturb, DMs hidden from capture",
+        "done": false
+      },
+      {
+        "id": "startup-15",
+        "text": "Phone silenced",
+        "done": false
+      },
+      {
+        "id": "startup-16",
+        "text": "Closed: bank, email, personal tabs, private Discord channels",
+        "done": false
+      },
+      {
+        "id": "startup-17",
+        "text": "Second monitor checked for anything that would show on stream",
+        "done": false
+      },
+      {
+        "id": "startup-18",
+        "text": "Twitch output armed",
+        "done": false
+      },
+      {
+        "id": "startup-19",
+        "text": "YouTube horizontal output armed",
+        "done": false
+      },
+      {
+        "id": "startup-20",
+        "text": "YouTube vertical second stream key set (Encoder mode)",
+        "done": false
+      },
+      {
+        "id": "startup-21",
+        "text": "Follower/sub goal values current",
+        "done": false
+      },
+      {
+        "id": "startup-22",
+        "text": "BRB and Ending scenes ready",
+        "done": false
+      }
+    ],
+    "shutdown": [
+      {
+        "id": "shutdown-0",
+        "text": "Switched to SHOW_Ending BEFORE stopping (so the VOD has an outro)",
+        "done": false
+      },
+      {
+        "id": "shutdown-1",
+        "text": "Stopped the stream on Twitch",
+        "done": false
+      },
+      {
+        "id": "shutdown-2",
+        "text": "Stopped the YouTube horizontal output",
+        "done": false
+      },
+      {
+        "id": "shutdown-3",
+        "text": "Stopped the YouTube vertical output",
+        "done": false
+      },
+      {
+        "id": "shutdown-4",
+        "text": "Stopped recording",
+        "done": false
+      },
+      {
+        "id": "shutdown-5",
+        "text": "Mic muted",
+        "done": false
+      },
+      {
+        "id": "shutdown-6",
+        "text": "Camera off",
+        "done": false
+      },
+      {
+        "id": "shutdown-7",
+        "text": "Game closed",
+        "done": false
+      },
+      {
+        "id": "shutdown-8",
+        "text": "Streamer.bot: no actions left running",
+        "done": false
+      },
+      {
+        "id": "shutdown-9",
+        "text": "OBS closed gracefully (do not kill it - leaves a crash sentinel)",
+        "done": false
+      },
+      {
+        "id": "shutdown-10",
+        "text": "Stream Deck / Stream Dock closed",
+        "done": false
+      },
+      {
+        "id": "shutdown-11",
+        "text": "Ran restore to un-tile windows",
+        "done": false
+      },
+      {
+        "id": "shutdown-12",
+        "text": "Checked the VOD is processing on Twitch",
+        "done": false
+      },
+      {
+        "id": "shutdown-13",
+        "text": "Saved/exported any clips worth keeping",
+        "done": false
+      },
+      {
+        "id": "shutdown-14",
+        "text": "Dashboard reset: title back to default",
+        "done": false
+      },
+      {
+        "id": "shutdown-15",
+        "text": "Deadlock state cleared (K/D/A, items) ready for next session",
+        "done": false
+      },
+      {
+        "id": "shutdown-16",
+        "text": "No private windows left open during the stream",
+        "done": false
+      },
+      {
+        "id": "shutdown-17",
+        "text": "Deleting any accidental personal info captured on screen",
+        "done": false
+      }
+    ]
   }
 }
