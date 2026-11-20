@@ -486,6 +486,53 @@ if ($Mode -eq 'dev') {
 }
 
 $ancestors = @(Get-AncestorPids) + $PID
+
+# The overlay server is a python process with no window, but it is usually a
+# child of a shell -- and here it is a background job of DeepSeek Harness. When
+# stream mode force-closed the harness, the job object took the server with it
+# and every overlay went blank. Protecting only the server is not enough: its
+# parent has to survive too.
+#
+# Matching is deliberately narrow. An earlier version matched any process whose
+# command line merely CONTAINED 'uvicorn server:app', which swept in the shells
+# and the harness by accident.
+$servicePatterns = @(
+    'uvicorn\s+server:app',
+    'server\.py',
+    'discord-bot[\\/]bot\.py'
+)
+$servicePids = @()
+try {
+    foreach ($p in (Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)) {
+        if (-not $p.CommandLine) { continue }
+        if ($p.Name -notmatch '^pythonw?\.exe$') { continue }
+        foreach ($pat in $servicePatterns) {
+            if ($p.CommandLine -match $pat) {
+                $servicePids += [int]$p.ProcessId
+                Write-Log "KEEP  $($p.Name) pid $($p.ProcessId)  (streaming service)"
+                break
+            }
+        }
+    }
+} catch { }
+
+# walk up from each service so its launcher is spared as well
+foreach ($svcPid in $servicePids) {
+    $cur = $svcPid
+    for ($i = 0; $i -lt 8; $i++) {
+        $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$cur" -ErrorAction SilentlyContinue
+        if (-not $proc) { break }
+        $parent = [int]$proc.ParentProcessId
+        if ($parent -le 0 -or $parent -eq $cur) { break }
+        if ($ancestors -notcontains $parent) {
+            $ancestors += $parent
+            $pp = Get-Process -Id $parent -ErrorAction SilentlyContinue
+            if ($pp) { Write-Log "KEEP  $($pp.ProcessName) pid $parent  (ancestor of the overlay server)" }
+        }
+        $cur = $parent
+    }
+}
+
 foreach ($b in @('dashboard', 'chat')) {
     $dir = Join-Path $StateDir ('browser\' + $b)
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
