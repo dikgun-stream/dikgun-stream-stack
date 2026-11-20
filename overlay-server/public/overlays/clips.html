@@ -336,8 +336,9 @@
   let winList = [];
   let winIdx = 0;
 
-  const WIPE_MS = 300;
+  const WIPE_MS = 600;          // one sweep; long enough to read
   const PRELOAD_TIMEOUT = 1500;
+  const HOLD_MS = 350;          // guaranteed still time at full cover
 
   function encPath(clip) {
     const mount = clip.mount || 'videos';
@@ -528,6 +529,10 @@
         new Promise((r) => incoming.addEventListener('playing', r, { once: true })),
         new Promise((r) => setTimeout(r, 250)),
       ]);
+
+      // Then hold regardless. Painting can happen in a few milliseconds, which
+      // left the game name on screen for barely a frame - it was unreadable.
+      await new Promise((r) => setTimeout(r, HOLD_MS));
 
       if (!instant) {
         // swap visibility only now, with the frame already decoded behind the
