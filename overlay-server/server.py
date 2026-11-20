@@ -1848,6 +1848,151 @@ def _category_search_sync(query: str, limit: int = 12) -> list[dict]:
     return out
 
 
+# ------------------------------------------------------------------- viewers
+_VIEWERS_QUERY = """
+query($login:String!) {
+  user(login: $login) {
+    displayName
+    stream { viewersCount game { name } }
+  }
+}
+"""
+
+
+def _twitch_viewers_sync(login: str) -> dict:
+    """Live viewer count straight from Twitch's public GraphQL.
+
+    No OAuth: this is the same unauthenticated endpoint the category search uses,
+    and it is what the web player itself calls.
+    """
+    import urllib.request
+
+    payload = json.dumps({
+        "query": _VIEWERS_QUERY,
+        "variables": {"login": login},
+    }).encode()
+    req = urllib.request.Request(
+        _GQL_URL, data=payload, method="POST",
+        headers={"Content-Type": "application/json",
+                 "Client-ID": _GQL_CLIENT_ID,
+                 "User-Agent": "Mozilla/5.0"},
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read().decode())
+    user = ((data.get("data") or {}).get("user") or {})
+    stream = user.get("stream") or {}
+    if not stream:
+        return {"live": False, "viewers": 0, "game": None}
+    return {
+        "live": True,
+        "viewers": stream.get("viewersCount"),
+        "game": ((stream.get("game") or {}).get("name")),
+    }
+
+
+def _youtube_viewers_sync(video_id: str, api_key: str) -> dict:
+    """Concurrent viewers for a YouTube live video.
+
+    Needs `youtube.videoId` and `viewers.youtubeApiKey` in the config. Without
+    them there is no unauthenticated way to read this - the public page does not
+    include the numbers for an unlisted live stream.
+    """
+    import urllib.parse
+    import urllib.request
+
+    params = urllib.parse.urlencode({
+        "part": "liveStreamingDetails,snippet",
+        "id": video_id,
+        "key": api_key,
+    })
+    url = f"https://www.googleapis.com/youtube/v3/videos?{params}"
+    with urllib.request.urlopen(url, timeout=10) as resp:
+        data = json.loads(resp.read().decode())
+
+    items = data.get("items") or []
+    if not items:
+        return {"live": False, "viewers": 0, "title": None}
+    details = items[0].get("liveStreamingDetails") or {}
+    viewers = details.get("concurrentViewers")
+    return {
+        "live": viewers is not None,
+        "viewers": int(viewers) if viewers is not None else None,
+        "title": (items[0].get("snippet") or {}).get("title"),
+    }
+
+
+@app.get("/api/viewers")
+async def api_viewers() -> dict:
+    """How many people are watching, by source.
+
+    Each entry carries a `state` so the UI can tell "nobody is watching" apart
+    from "we cannot know": a monitor that shows 0 when it simply failed is worse
+    than one that admits it does not know.
+    """
+    cfg = CONFIG.get("viewers") or {}
+    twitch_cfg = CONFIG.get("twitch") or {}
+    yt_cfg = CONFIG.get("youtube") or {}
+
+    sources = []
+
+    # ---- Twitch
+    login = str(twitch_cfg.get("channel") or "").strip()
+    if login:
+        try:
+            tw = await asyncio.to_thread(_twitch_viewers_sync, login)
+            sources.append({
+                "id": "twitch",
+                "label": "TWITCH",
+                "live": tw["live"],
+                "viewers": tw["viewers"],
+                "state": "ok" if tw["live"] else "offline",
+                "game": tw["game"],
+            })
+        except Exception as exc:  # noqa: BLE001
+            sources.append({"id": "twitch", "label": "TWITCH", "live": None,
+                            "viewers": None, "state": "error",
+                            "detail": str(exc)[:120]})
+    else:
+        sources.append({"id": "twitch", "label": "TWITCH", "live": None,
+                        "viewers": None, "state": "unconfigured"})
+
+    # ---- YouTube (horizontal + vertical)
+    api_key = str(cfg.get("youtubeApiKey") or "").strip()
+    videos = {
+        "youtube": ("YOUTUBE", yt_cfg.get("videoId")),
+        "vertical": ("VERTICAL", yt_cfg.get("verticalVideoId")),
+    }
+    for key, (label, vid) in videos.items():
+        vid = str(vid or "").strip()
+        if not api_key:
+            sources.append({"id": key, "label": label, "live": None,
+                            "viewers": None, "state": "no-api-key"})
+        elif not vid:
+            sources.append({"id": key, "label": label, "live": None,
+                            "viewers": None, "state": "no-video-id"})
+        else:
+            try:
+                yt = await asyncio.to_thread(_youtube_viewers_sync, vid, api_key)
+                sources.append({
+                    "id": key, "label": label, "live": yt["live"],
+                    "viewers": yt["viewers"],
+                    "state": "ok" if yt["live"] else "offline",
+                })
+            except Exception as exc:  # noqa: BLE001
+                sources.append({"id": key, "label": label, "live": None,
+                                "viewers": None, "state": "error",
+                                "detail": str(exc)[:120]})
+
+    known = [x["viewers"] for x in sources
+             if x["state"] == "ok" and isinstance(x.get("viewers"), int)]
+    return {
+        "ok": True,
+        "sources": sources,
+        "total": sum(known) if known else None,
+        "known": len(known),
+    }
+
+
 @app.get("/api/twitch/categories")
 async def twitch_categories(q: str = "") -> dict:
     """Search Twitch categories. The name returned is what Twitch itself calls it,

@@ -6,14 +6,35 @@
 <style>
   html, body { margin:0; height:100%; background:#0b0e13; color:#e6edf5;
     font:15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; overflow:hidden; }
+  body { display:flex; flex-direction:column; }
+
   header { padding:10px 16px; border-bottom:1px solid #242d3a; display:flex;
-           align-items:center; gap:10px; background:#141a22; }
+           align-items:center; gap:10px; background:#141a22; flex:0 0 auto; }
   header h1 { font-size:13px; margin:0; letter-spacing:.6px; font-weight:600; }
   .dot { width:8px; height:8px; border-radius:50%; background:#5b6675; }
   .dot.on { background:#4ade80; box-shadow:0 0 8px #4ade80; }
   #tally { margin-left:auto; font-size:11px; color:#8291a3; }
-  #feed { position:absolute; top:45px; bottom:0; left:0; right:0; overflow-y:auto;
-          padding:10px 16px; display:flex; flex-direction:column; gap:3px; }
+
+  /* viewer strip ------------------------------------------------------- */
+  #viewers { display:flex; align-items:stretch; gap:1px; background:#242d3a;
+             flex:0 0 auto; border-bottom:1px solid #242d3a; }
+  .src { flex:1 1 0; background:#10161d; padding:6px 10px 7px; min-width:0; }
+  .src .k { font-size:9px; letter-spacing:1.2px; color:#7b8798; font-weight:700;
+            display:flex; align-items:center; gap:5px; }
+  .src .k i { width:6px; height:6px; border-radius:50%; display:inline-block; }
+  .src .v { font-size:22px; font-weight:700; line-height:1.1;
+            font-variant-numeric:tabular-nums; }
+  .src.unknown .v { color:#4b5563; font-size:15px; font-weight:600; }
+  .src .n { font-size:9px; color:#5b6675; letter-spacing:.3px;
+            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #vwTotal { background:#161c26; display:flex; flex-direction:column;
+             justify-content:center; align-items:flex-end; padding:6px 12px 7px;
+             min-width:74px; }
+  #vwTotal .k { font-size:9px; letter-spacing:1.2px; color:#7b8798; font-weight:700; }
+  #vwTotal .v { font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; }
+
+  #feed { flex:1 1 auto; overflow-y:auto; padding:10px 16px;
+          display:flex; flex-direction:column; gap:3px; }
   .line { word-wrap:break-word; }
   .u { font-weight:700; }
   .t { color:#e6edf5; }
@@ -29,6 +50,29 @@
   <h1 id="title">chat</h1>
   <span id="tally"></span>
 </header>
+
+<div id="viewers">
+  <div class="src unknown" id="src-twitch">
+    <div class="k"><i style="background:#9146FF"></i>TWITCH</div>
+    <div class="v">—</div>
+    <div class="n">&nbsp;</div>
+  </div>
+  <div class="src unknown" id="src-youtube">
+    <div class="k"><i style="background:#FF0000"></i>YOUTUBE</div>
+    <div class="v">—</div>
+    <div class="n">&nbsp;</div>
+  </div>
+  <div class="src unknown" id="src-vertical">
+    <div class="k"><i style="background:#C8161D"></i>VERTICAL</div>
+    <div class="v">—</div>
+    <div class="n">&nbsp;</div>
+  </div>
+  <div id="vwTotal">
+    <div class="k">TOTAL</div>
+    <div class="v">—</div>
+  </div>
+</div>
+
 <div id="feed"></div>
 <script>
 const feed = document.getElementById('feed');
@@ -64,6 +108,60 @@ function add(evt) {
   document.getElementById('tally').textContent = `${counts.chat} chat · ${counts.alerts} events`;
 }
 
+// ---------------------------------------------------------------- viewers
+// Every source reports a state, not just a number, so the panel can say "no API
+// key" instead of showing a confident zero. A viewer counter that lies is worse
+// than one that admits it does not know.
+const STATE_TEXT = {
+  offline:      'offline',
+  'no-api-key': 'no API key',
+  'no-video-id':'no video id',
+  unavailable:  'unavailable',
+  unconfigured: 'not configured',
+  error:        'error',
+};
+
+function renderSource(el, src) {
+  const v = el.querySelector('.v');
+  const n = el.querySelector('.n');
+  if (!src) return;
+
+  if (src.state === 'ok' && typeof src.viewers === 'number') {
+    el.classList.remove('unknown');
+    v.textContent = src.viewers.toLocaleString();
+    n.textContent = src.game || (src.live ? 'live' : '');
+    el.title = `${src.label}: ${src.viewers} watching`;
+  } else {
+    el.classList.add('unknown');
+    v.textContent = '—';
+    n.textContent = STATE_TEXT[src.state] || src.state || '';
+    el.title = src.detail ? `${src.label}: ${src.detail}` : (el.title || '');
+  }
+}
+
+async function pollViewers() {
+  try {
+    const r = await fetch('/api/viewers', { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+
+    for (const src of d.sources || []) {
+      const el = document.getElementById('src-' + src.id);
+      if (el) renderSource(el, src);
+    }
+    const totalEl = document.querySelector('#vwTotal .v');
+    totalEl.textContent = (typeof d.total === 'number') ? d.total.toLocaleString() : '—';
+    document.getElementById('vwTotal').title =
+      d.known ? `${d.total} across ${d.known} known source(s)` : 'no source reports a count';
+  } catch (e) {
+    // leave the last good numbers up rather than blanking the strip
+  }
+}
+
+pollViewers();
+setInterval(pollViewers, 30000);
+
+// ------------------------------------------------------------------- socket
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${location.host}/ws?role=control`);
