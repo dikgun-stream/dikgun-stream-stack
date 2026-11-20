@@ -1,7 +1,17 @@
 # Restart RivaTuner's kernel driver without rebooting.
 #
-#   powershell -File restart-rivatuner.ps1 -Check    report state only
-#   powershell -File restart-rivatuner.ps1 -Fix      stop driver, restart app
+#   powershell -File restart-rivatuner.ps1 -Check            report state only
+#   powershell -File restart-rivatuner.ps1 -Fix              restart the app
+#   powershell -File restart-rivatuner.ps1 -Fix -Driver      also reload the driver
+#
+# -Fix alone is the normal repair. Measured on this machine: the 4-day-old app
+# had a stale hook while RivaTuner64 stayed loaded the whole time, and a plain
+# app restart restored it. RivaTuner re-attaches to the current display driver
+# when it starts, so the kernel driver does not need to be unloaded at all.
+#
+# -Driver is the belt-and-braces path for when an app restart is not enough. It
+# needs administrator rights and a UAC prompt, because stopping a kernel driver
+# does.
 #
 # Why this is needed
 #   RivaTuner 2.24 installs a kernel driver (RivaTuner64) that hooks the display
@@ -26,6 +36,7 @@
 param(
     [switch]$Check,
     [switch]$Fix,
+    [switch]$Driver,           # also cycle the kernel driver (needs admin)
     [switch]$Elevated          # internal: set when this instance was relaunched
 )
 
@@ -82,6 +93,11 @@ if ($Check -or (-not $Fix)) {
 }
 
 # ------------------------------------------------------------------ escalate
+# Always escalate for -Fix. RivaTuner's manifest uses a placeholder execution
+# level, so whether its process is elevated depends on how it was launched - the
+# original boot-time instance was killable unelevated, the one started from here
+# was not ("Access is denied"). Escalating unconditionally is one prompt either
+# way and cannot fail for that reason.
 if (-not (Test-Elevated)) {
     Write-Host ''
     Write-Host '  Stopping a kernel driver needs administrator rights.' -ForegroundColor Yellow
@@ -127,7 +143,7 @@ if ($proc) {
     Write-Host '  app closed' -ForegroundColor DarkGray
 }
 
-if ((Get-SvcState) -eq 'Running') {
+if ($Driver -and (Get-SvcState) -eq 'Running') {
     $out = & sc.exe stop $Svc 2>&1
     $deadline = (Get-Date).AddSeconds(15)
     while ((Get-SvcState) -eq 'Running' -and (Get-Date) -lt $deadline) {
@@ -152,6 +168,12 @@ while (-not (Get-Process RivaTuner -ErrorAction SilentlyContinue) -and (Get-Date
 Start-Sleep -Seconds 2
 
 Show-State
-Write-Host '  Done. Now try the profile hotkey - if the screen changes, the hook is' -ForegroundColor Green
-Write-Host '  live again. If not, the problem is the profile association, not the driver.' -ForegroundColor Green
+if ($Driver) {
+    Write-Host '  App restarted and driver reloaded.' -ForegroundColor Green
+} else {
+    Write-Host '  App restarted. RivaTuner re-attaches to the current display driver on' -ForegroundColor Green
+    Write-Host '  start, which is normally the whole repair.' -ForegroundColor Green
+}
+Write-Host '  Now try the profile hotkey. If the screen still does not change, retry' -ForegroundColor DarkGray
+Write-Host '  with -Driver, or check the profile association in RivaTuner itself.' -ForegroundColor DarkGray
 Write-Host ''
