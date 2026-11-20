@@ -178,8 +178,10 @@ if ($Restart) {
         Write-Host "  restart helper not found: $Helper" -ForegroundColor Red
     } else {
         Write-Host '  restarting RivaTuner driver first...' -ForegroundColor Yellow
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $Helper -Fix | Out-Null
-        Start-Sleep -Seconds 3
+        # never pipe this to Out-Null: the helper needs elevation, and swallowing
+        # its output is what made a failed restart look like a successful one.
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $Helper -Fix
+        Start-Sleep -Seconds 2
     }
 }
 
