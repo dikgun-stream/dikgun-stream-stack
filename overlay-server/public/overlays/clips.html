@@ -399,8 +399,31 @@
     if (total > 0) progEl.style.width = `${Math.min(100, (done / total) * 100)}%`;
   }
 
+  let lastTime = -1;
+  let lastMoveAt = Date.now();
+
   function tickPlayback() {
-    if (!winList.length || active.paused) return;
+    if (!winList.length || !active) return;
+
+    // A clip whose window runs to the end of the file stops being 'playing'.
+    // Checking this BEFORE the paused guard is what stops it freezing forever.
+    if (active.ended) {
+      advance();
+      return;
+    }
+    if (active.paused) return;
+
+    // Stall watchdog: if the playhead has not moved for 10s while supposedly
+    // playing, the decode has wedged. Skip on rather than sit frozen on stream.
+    if (active.currentTime !== lastTime) {
+      lastTime = active.currentTime;
+      lastMoveAt = Date.now();
+    } else if (Date.now() - lastMoveAt > 10000) {
+      lastMoveAt = Date.now();
+      advance();
+      return;
+    }
+
     const w = winList[winIdx];
     if (!w) return;
     progress();
@@ -521,6 +544,8 @@
 
       winList = windowsFor(clip) || [];
       winIdx = 0;
+      lastTime = -1;
+      lastMoveAt = Date.now();
 
       // Do not uncover until the incoming video has painted something. Without
       // this the sweep-out can reveal a black frame on a cold cache, because
@@ -563,6 +588,13 @@
     v.addEventListener('error', () => {
       if (v !== active) return;
       setTimeout(advance, 1200);      // a missing codec must not stall the loop
+    });
+
+    // The old single-video player advanced on 'ended'. The rewrite lost that,
+    // so a clip that ran to the end of its file simply stopped.
+    v.addEventListener('ended', () => {
+      if (v !== active) return;
+      advance();
     });
   }
 
