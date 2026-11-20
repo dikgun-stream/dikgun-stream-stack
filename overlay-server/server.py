@@ -556,6 +556,52 @@ async def lifespan(app: FastAPI):
 
 
 
+# How much context a moment gets. Five seconds of lead-in is roughly one
+# engagement's warning; three seconds of tail is enough to see the result without
+# sitting through the reload.
+PLAY_PAD_BEFORE = 5.0
+PLAY_PAD_AFTER = 3.0
+# Moments closer together than this play straight through rather than cutting
+# away and back, which would feel choppier than leaving the gap in.
+PLAY_MERGE_GAP = 30.0
+
+
+def _play_windows(spans, duration=None, pad_before=PLAY_PAD_BEFORE,
+                  pad_after=PLAY_PAD_AFTER, merge_gap=PLAY_MERGE_GAP):
+    """Padded, merged play spans from raw [start, end] moment spans.
+
+    Overlapping or near-adjacent spans are joined so the player never cuts out
+    of something interesting only to cut back in a second later.
+    """
+    if not spans:
+        return []
+    padded = []
+    for a, b in spans:
+        try:
+            a, b = float(a), float(b)
+        except (TypeError, ValueError):
+            continue
+        if b < a:
+            a, b = b, a
+        x = max(0.0, a - pad_before)
+        y = b + pad_after
+        if duration:
+            y = min(y, float(duration))
+        if y - x >= 1.0:
+            padded.append([x, y])
+    if not padded:
+        return []
+    padded.sort(key=lambda r: r[0])
+    merged = [padded[0]]
+    for a, b in padded[1:]:
+        if a - merged[-1][1] <= merge_gap:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    return [[round(a, 2), round(b, 2)] for a, b in merged]
+
+
+
 # --------------------------------------------------------------------- checklists
 # Pre-flight and post-flight lists. Deliberately exhaustive: the cost of reading
 # a few extra lines is nothing next to going live with the wrong game selected
@@ -838,6 +884,7 @@ async def api_clip_highlights(source: str = "all", limit: int = 400) -> dict:
                     "laugh_at": None,
                     "peak": None,
                     "source": "curated",
+                    "windows": [[round(start, 2), round(end, 2)]],
                     "label": it.get("label"),
                 })
             continue
@@ -856,6 +903,29 @@ async def api_clip_highlights(source: str = "all", limit: int = 400) -> dict:
                     continue
                 if end - start < 5:
                     continue
+
+                # The moment itself, not the padded segment: the player seeks
+                # here so a clip opens on the action rather than on whatever
+                # was on screen when the recording started.
+                #
+                # The indexes only persist the first and last hit of a segment,
+                # not each one, so a dense stretch (Deadlock with 30 hits) is
+                # covered by one continuous span rather than invented interior
+                # timestamps.
+                if label == "laughter":
+                    moment_a = seg.get("laugh_at")
+                    moment_b = max(float(seg.get("laugh_at") or 0),
+                                     float(seg.get("laugh_until") or 0)) or None
+                else:
+                    moment_a = seg.get("first_at")
+                    moment_b = seg.get("last_at")
+
+                spans = []
+                if moment_a is not None:
+                    spans.append((moment_a, moment_b if moment_b is not None
+                                           else moment_a))
+                windows = _play_windows(spans, res.get("duration"))
+
                 out.append({
                     "rel": rel,
                     "mount": meta.get("mount", "videos"),
@@ -867,6 +937,7 @@ async def api_clip_highlights(source: str = "all", limit: int = 400) -> dict:
                     "laugh_at": seg.get("laugh_at"),
                     "peak": res.get("peak") or res.get("peak_score"),
                     "source": label,
+                    "windows": windows,
                 })
 
     out.sort(key=lambda x: -(x.get("kills") or 0) * 10 - (x.get("laugh_at") or 0))

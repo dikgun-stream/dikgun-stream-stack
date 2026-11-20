@@ -209,12 +209,42 @@
 /* vertical scenes are narrower: keep the edge proportional */
 .v #wipe::before, .v #wipe::after { width: calc(var(--rule-mid) + 6px); }
 
+/* second video, so the incoming clip can be prepared under the cover */
+#vid2 {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  z-index: 1;
+  background: #000;
+}
+/* whichever video is idle sits behind and does not paint */
+#vid:not(.live), #vid2:not(.live) { opacity: 0; }
+
+/* the incoming game name, carried on the banner */
+#wipeName {
+  position: absolute; left: 0; right: 0; top: 50%;
+  transform: translateY(-50%);
+  text-align: center;
+  font-family: 'Oswald', 'Rubik', sans-serif;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  font-size: 8.5vmin;
+  line-height: 1.02;
+  color: var(--paper-hi);
+  padding: 0 5%;
+  word-break: break-word;
+}
+/* vertical scenes are narrower: less of the name fits */
+.v #wipeName { font-size: 6.2vmin; }
+
 </style>
 </head>
 <body>
 <div id="stage">
-  <video id="vid" playsinline preload="auto"></video>
-  <div id="wipe"></div>
+  <video id="vid" class="live" playsinline preload="auto"></video>
+  <video id="vid2" playsinline preload="auto"></video>
+  <div id="wipe"><div id="wipeName"></div></div>
   <div id="shade"></div>
   <div id="prog"></div>
   <div id="title"></div>
@@ -242,6 +272,7 @@
 </div>
 
 <script>
+
 (() => {
   const params = new URLSearchParams(location.search);
   const vertical = params.get('v') === '1' || window.innerHeight > window.innerWidth * 1.2;
@@ -249,19 +280,23 @@
 
   const onlyGame = params.get('game') || '';
   const startFrac = Number(params.get('start') ?? 0.12);
-  const playLen = Number(params.get('len') ?? 45);       // seconds; 0 = whole file
+  const fallbackLen = Number(params.get('len') ?? 45);   // only for clips with no windows
   const muted = params.get('mute') !== '0';
   const shuffle = params.get('shuffle') !== '0';
 
-  const vid = document.getElementById('vid');
+  const vids = [document.getElementById('vid'), document.getElementById('vid2')];
+  let active = vids[0];
+  let activeIdx = 0;
+
   const gameEl = document.getElementById('game');
   const titleEl = document.getElementById('title');
   const idxEl = document.getElementById('idx');
   const msgEl = document.getElementById('msg');
   const progEl = document.getElementById('prog');
+  const wipeEl = document.getElementById('wipe');
+  const wipeName = document.getElementById('wipeName');
 
-  vid.muted = muted;
-  vid.volume = muted ? 0 : 1;
+  for (const v of vids) { v.muted = muted; v.volume = muted ? 0 : 1; }
 
   // optional headline / subline / countdown so this one player can carry the
   // Starting Soon and Ending looks
@@ -269,10 +304,9 @@
   const ovSub = params.get('sub') || '';
   const ovMinutes = Number(params.get('minutes') || 0);
   if (ovTitle || ovSub) {
-    const blk = document.getElementById('titleblock');
     document.getElementById('ovTitle').textContent = ovTitle;
     document.getElementById('ovSub').textContent = ovSub;
-    blk.classList.add('on');
+    document.getElementById('titleblock').classList.add('on');
   }
   if (ovMinutes > 0) {
     const box = document.getElementById('ovTimer');
@@ -282,8 +316,8 @@
     const pad = (n) => String(n).padStart(2, '0');
     const tick = () => {
       const left = Math.max(0, endsAt - Date.now());
-      const s = Math.floor(left / 1000);
-      clock.textContent = `${pad(Math.floor(s / 60))}:${pad(s % 60)}`;
+      const sec = Math.floor(left / 1000);
+      clock.textContent = `${pad(Math.floor(sec / 60))}:${pad(sec % 60)}`;
     };
     tick();
     setInterval(tick, 500);
@@ -292,13 +326,20 @@
   let clips = [];
   let order = [];
   let pos = 0;
-  let stopAt = 0;
-  let deadline = 0;
-  let sourceLabel = 'CLIP';
+  let firstClip = true;
+  let switching = false;
+
+  // ---------------------------------------------------------------- playback
+  // The list of spans worth watching inside the current file, and which one is
+  // playing. Everything below advances through these rather than through the
+  // file from zero.
+  let winList = [];
+  let winIdx = 0;
+
+  const WIPE_MS = 300;
+  const PRELOAD_TIMEOUT = 1500;
 
   function encPath(clip) {
-    // each clip folder is mounted separately, so the mount prefix comes from the
-    // API rather than being hardcoded
     const mount = clip.mount || 'videos';
     const rel = String(clip.rel || clip);
     return '/' + mount + '/' + rel.split('/').map(encodeURIComponent).join('/');
@@ -318,73 +359,120 @@
     gameEl.classList.toggle('is-long', (name || '').length > 16);
   }
 
-  // ------------------------------------------------------------ transitions
-  const wipeEl = document.getElementById('wipe');
-  const WIPE_MS = 260;          // one sweep, in or out
-  let switching = false;        // guards against overlapping transitions
-  let firstClip = true;
+  function idleVideo() { return vids[1 - activeIdx]; }
 
+  /* The spans to play for a clip. Falls back to the old single-window behaviour
+     for library entries that were never scanned, so this still works when the
+     highlight indexes are missing. */
+  function windowsFor(clip) {
+    const w = clip && clip.windows;
+    if (Array.isArray(w) && w.length && Array.isArray(w[0]) && w[0].length === 2) {
+      return w.map((p) => [Number(p[0]) || 0, Number(p[1]) || 0])
+              .filter((p) => p[1] > p[0]);
+    }
+    const start = Number(clip.start);
+    if (Number.isFinite(start) && start > 0) {
+      return [[start, start + (Number(clip.len) || fallbackLen)]];
+    }
+    return null;   // unknown: fall back to a random seek like before
+  }
+
+  function seekInto(video, seconds) {
+    try { video.currentTime = Math.max(0, seconds); } catch (e) { /* not seekable yet */ }
+  }
+
+  function seekToWindow(i) {
+    if (!winList[i]) return;
+    seekInto(active, winList[i][0]);
+  }
+
+  function progress() {
+    if (!winList.length) return;
+    let total = 0, done = 0;
+    for (let i = 0; i < winList.length; i++) {
+      const len = Math.max(0.1, winList[i][1] - winList[i][0]);
+      total += len;
+      if (i < winIdx) done += len;
+      else if (i === winIdx) done += Math.min(len, Math.max(0, active.currentTime - winList[i][0]));
+    }
+    if (total > 0) progEl.style.width = `${Math.min(100, (done / total) * 100)}%`;
+  }
+
+  function tickPlayback() {
+    if (!winList.length || active.paused) return;
+    const w = winList[winIdx];
+    if (!w) return;
+    progress();
+    if (active.currentTime >= w[1] - 0.06) {
+      if (winIdx + 1 < winList.length) {
+        winIdx += 1;
+        seekToWindow(winIdx);
+      } else {
+        advance();
+      }
+    }
+  }
+  setInterval(tickPlayback, 200);
+
+  // ------------------------------------------------------------- transitions
   function wipeTo(xPercent, ms) {
     return new Promise((resolve) => {
       if (ms <= 0) {
-        // park instantly: only safe while the slab is off-screen
         wipeEl.style.transition = 'none';
         wipeEl.style.transform = `translateX(${xPercent}%)`;
-        void wipeEl.offsetWidth;        // flush, so the next move animates
+        void wipeEl.offsetWidth;
         resolve();
         return;
       }
-      wipeEl.style.transition = `transform ${ms}ms cubic-bezier(.65,.06,.36,1)`;
+      wipeEl.style.transition = `transform ${ms}ms cubic-bezier(.62,.05,.36,1)`;
       wipeEl.style.transform = `translateX(${xPercent}%)`;
-      setTimeout(resolve, ms + 15);
+      setTimeout(resolve, ms + 10);
     });
   }
 
-  /* Load a clip and resolve once it is actually painting a frame. Resolving on
-     the transfer rather than a fixed delay means a slow decode does not reveal
-     a black frame; the timeout means a broken file cannot stall the loop. */
-  function loadAndPlay(c, maxWaitMs) {
+  /* Point a video at a clip and put it on that clip's first span.
+     Resolves on metadata (or the timeout) - never on 'playing', because the
+     source files are hundreds of MB and waiting for playback would hold the
+     banner on screen. */
+  function loadInto(video, clip, timeoutMs) {
     return new Promise((resolve) => {
-      let settled = false;
-      const finish = () => {
-        if (settled) return;
-        settled = true;
-        setTimeout(resolve, 40);       // one frame of margin
-      };
+      const url = encPath(clip);
+      const wins = windowsFor(clip);
 
-      vid.addEventListener('playing', finish, { once: true });
-
-      try { vid.src = encPath(c); } catch { /* fall through to the timeout */ }
-
-      const seek = () => {
-        // jump into the recording so clips do not always open on a menu screen
-        const dur = Number.isFinite(vid.duration) && vid.duration > 30 ? vid.duration : 0;
-        const from = Number.isFinite(startFrac) && startFrac > 0 ? startFrac : 0;
-        const maxStart = Math.max(0, dur - Math.max(20, playLen || 20));
-        const target = Math.min(maxStart, dur * from + Math.random() * 30);
-        if (target > 1 && dur) {
-          try { vid.currentTime = target; } catch { /* not seekable yet */ }
+      const arm = () => {
+        if (wins && wins.length) seekInto(video, wins[0][0]);
+        else {
+          const dur = Number.isFinite(video.duration) && video.duration > 30 ? video.duration : 0;
+          const from = Number.isFinite(startFrac) && startFrac > 0 ? startFrac : 0;
+          const maxStart = Math.max(0, dur - Math.max(20, fallbackLen || 20));
+          seekInto(video, Math.min(maxStart, dur * from + Math.random() * 30));
         }
-        deadline = playLen > 0 ? Date.now() + playLen * 1000 : 0;
+        resolve();
       };
 
-      if (vid.readyState >= 1) seek();
-      else vid.addEventListener('loadedmetadata', seek, { once: true });
+      if (video.dataset.url !== url) {
+        video.dataset.url = url;
+        try { video.pause(); } catch (e) { /* ignore */ }
+        try { video.src = url; } catch (e) { resolve(); return; }
+      }
 
-      vid.play().catch(() => {
-        // autoplay refused: retry muted once, then give up quietly
-        vid.muted = true;
-        vid.play().catch(() => {
-          msgEl.textContent = 'CLICK TO PLAY';
-          msgEl.classList.remove('hide');
-          finish();
-        });
-      });
+      if (video.readyState >= 1) { arm(); return; }
 
-      // Hard ceiling: never hold the cover longer than this. These source
-      // files are huge, and a frozen red screen is worse than a cut.
-      setTimeout(finish, maxWaitMs || 280);
+      let done = false;
+      const finish = () => { if (done) return; done = true; arm(); };
+      video.addEventListener('loadedmetadata', finish, { once: true });
+      setTimeout(finish, timeoutMs || PRELOAD_TIMEOUT);
     });
+  }
+
+  /* Load the next clip into the hidden video while the current one plays. This
+     is what makes the trailing edge reveal a live frame instead of black. */
+  function preloadNext() {
+    if (!order.length) return;
+    const next = order[(pos + 1) % order.length];
+    const iv = idleVideo();
+    if (!next || iv.dataset.url === encPath(next)) return;
+    loadInto(iv, next, 4000);
   }
 
   async function play(index, opts) {
@@ -396,37 +484,68 @@
       return;
     }
 
-    // The very first clip loads without a wipe - there is nothing to transition
-    // from, and a sweep before the stream has started looks like a fault.
+    // The very first clip loads without a wipe: there is nothing to transition
+    // from, and a sweep before the stream starts looks like a fault.
     const instant = opts.instant === true || firstClip;
+    const nextPos = ((index % order.length) + order.length) % order.length;
+    const clip = order[nextPos];
 
     try {
       if (!instant) {
         switching = true;
-        await wipeTo(0, WIPE_MS);      // sweep in, fully covering the frame
+        // the banner carries the game that is coming in, not the one leaving
+        wipeName.textContent = (clip.game || '').toUpperCase();
+        await wipeTo(0, WIPE_MS);
       }
 
-      pos = ((index % order.length) + order.length) % order.length;
-      const c = order[pos];
-
-      labelGame(c.game);
-      titleEl.textContent = c.title || c.file;
+      pos = nextPos;
+      labelGame(clip.game);
+      titleEl.textContent = clip.title || clip.file;
       idxEl.textContent = `${pos + 1} / ${order.length}`;
       msgEl.classList.add('hide');
       progEl.style.width = '0%';
 
-      await loadAndPlay(c, 280);
-      firstClip = false;
+      // instant: reuse whatever is already visible. otherwise the hidden video,
+      // which preloadNext has usually already pointed at this clip.
+      const incoming = instant ? active : idleVideo();
+      await loadInto(incoming, clip, instant ? 2500 : PRELOAD_TIMEOUT);
+
+      incoming.play().catch(() => {
+        incoming.muted = true;
+        incoming.play().catch(() => {
+          msgEl.textContent = 'CLICK TO PLAY';
+          msgEl.classList.remove('hide');
+        });
+      });
+
+      winList = windowsFor(clip) || [];
+      winIdx = 0;
+
+      // Do not uncover until the incoming video has painted something. Without
+      // this the sweep-out can reveal a black frame on a cold cache, because
+      // metadata alone does not guarantee a decoded picture.
+      await Promise.race([
+        new Promise((r) => incoming.addEventListener('playing', r, { once: true })),
+        new Promise((r) => setTimeout(r, 250)),
+      ]);
 
       if (!instant) {
-        await wipeTo(100, WIPE_MS);    // sweep off to the right
-        await wipeTo(-100, 0);         // park left again, unseen
+        // swap visibility only now, with the frame already decoded behind the
+        // banner, so the trailing edge uncovers the new clip rather than black
+        active.classList.remove('live');
+        incoming.classList.add('live');
+        active = incoming;
+        activeIdx = vids.indexOf(active);
+
+        await wipeTo(100, WIPE_MS);
+        await wipeTo(-100, 0);
       }
+
+      firstClip = false;
+      preloadNext();
     } finally {
-      // Always release the guard and always leave the slab off-screen. Without
-      // this, one thrown error would set switching=true forever and the player
-      // would silently stop advancing.
       switching = false;
+      // never leave the banner parked over the picture
       if (wipeEl && wipeEl.style.transform !== 'translateX(-100%)') {
         wipeTo(-100, 0);
       }
@@ -435,41 +554,27 @@
 
   function advance() { play(pos + 1); }
 
-  vid.addEventListener('ended', advance);
-  vid.addEventListener('error', () => {
-    // a missing codec should not stall the loop
-    setTimeout(advance, 1500);
-  });
+  for (const v of vids) {
+    v.addEventListener('error', () => {
+      if (v !== active) return;
+      setTimeout(advance, 1200);      // a missing codec must not stall the loop
+    });
+  }
 
-  // watchdog: honour the play window even if the file reports a bad duration
-  setInterval(() => {
-    if (!deadline || vid.paused) return;
-    if (Date.now() > deadline) { deadline = 0; advance(); }
-  }, 1000);
-
-  vid.addEventListener('timeupdate', () => {
-    if (Number.isFinite(vid.duration) && vid.duration > 0) {
-      progEl.style.width = `${(vid.currentTime / vid.duration) * 100}%`;
-    }
-  });
-
+  // ---------------------------------------------------------------- clip list
   async function load() {
     try {
       const source = params.get('source') || '';
       let url = `/api/clips${onlyGame ? `?game=${encodeURIComponent(onlyGame)}` : ''}`;
       let data;
       if (source) {
-        // highlight mode: windows inside full recordings, not whole files
         url = `/api/clips/highlights?source=${encodeURIComponent(source)}`;
         data = await (await fetch(url, { cache: 'no-store' })).json();
         clips = data.highlights || [];
         if (!clips.length) {
-          // the laughter scan is a long job and may not have reached much yet;
-          // falling back keeps the scene useful instead of showing an empty frame
           data = await (await fetch(`/api/clips${onlyGame ? `?game=${encodeURIComponent(onlyGame)}` : ''}`,
                                     { cache: 'no-store' })).json();
           clips = data.clips || [];
-          if (clips.length) sourceLabel = 'ALL CLIPS';
         }
       } else {
         data = await (await fetch(url, { cache: 'no-store' })).json();
@@ -481,23 +586,24 @@
         msgEl.classList.remove('hide');
         return;
       }
+      const wasEmpty = !order.length;
       order = shuffle ? shuffleInto(clips) : clips.slice();
-      play(0, { instant: true });
+      if (wasEmpty) play(0, { instant: true });
     } catch (e) {
       msgEl.textContent = 'CLIP API UNREACHABLE';
       msgEl.classList.remove('hide');
     }
   }
 
-  // refresh the pool periodically so newly recorded clips join the rotation
   load();
-  setInterval(load, 10 * 60 * 1000);
+  setInterval(load, 10 * 60 * 1000);   // pick up newly recorded clips
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowRight') advance();
     if (e.key === 'ArrowLeft') play(pos - 1);
   });
 })();
+
 </script>
 </body>
 </html>
