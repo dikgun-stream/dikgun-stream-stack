@@ -56,7 +56,12 @@ function Get-KeyName([int]$vk) {
 
 function ConvertFrom-RivaHotkey([int]$raw) {
     $vk = $raw -band 0xFFFF
-    $mods = ($raw -shr 16) -band 0xFFFF
+    # RivaTuner's high word is not plain Win32 MOD_* flags. Verified against its
+    # UI: 'Night' reads 655393 = 0x000A0021 and the launcher editor shows
+    # 'Ctrl + Page Up'. So 0x0A carries Ctrl (0x02) plus 0x08, which is a flag
+    # (the entry is a system-wide hotkey), not MOD_WIN. Masking to 0x07 gives the
+    # real modifiers and reproduces the UI exactly.
+    $mods = ($raw -shr 16) -band 0x07
     $parts = @()
     if ($mods -band $MOD.CTRL)  { $parts += 'Ctrl' }
     if ($mods -band $MOD.ALT)   { $parts += 'Alt' }
