@@ -1,0 +1,29 @@
+# overlay-server dependencies
+#
+# Versions are the ones this build was tested against on Windows 11 / Python
+# 3.12. Pinned loosely (>=) so a fresh install gets something current, but not
+# so open that a major bump silently changes behaviour.
+#
+# Not pip-installable, and required for the scanners to work:
+#   * ffmpeg      - must be on PATH (frame extraction, clip excerpts)
+#   * Tesseract   - C:\Program Files\Tesseract-OCR\tesseract.exe (OCR markers)
+#   * YAMNet      - obs-build/yamnet/, TensorFlow SavedModel (~35 MB, not in git)
+#
+# The YAMNet model is only needed to RE-RUN laughter_scan.py. The server starts
+# and serves overlays without it; the existing laughter index is derived data
+# that a fresh clone does not have either, so rescanning is a recovery step.
+
+fastapi>=0.110
+uvicorn>=0.27
+websockets>=12
+pydantic>=2.5
+pillow>=10
+opencv-python>=4.9
+numpy>=1.26
+pytesseract>=0.3.10
+python-dotenv>=1.0
+aiohttp>=3.9
+
+# Only needed for laughter_scan.py. Large (~500 MB with CUDA stubs); install
+# with `pip install tensorflow` separately if you do not need audio scanning.
+# tensorflow>=2.15
