@@ -541,14 +541,18 @@ async def _yt_chat_loop() -> None:
     screen reveals where it came from. Overlays that should stay Twitch-only
     can filter on the `source` field.
     """
-    yt = CONFIG.get("youtube") or {}
-    vid = str(yt.get("videoId") or "").strip()
-    if not vid or not bool(yt.get("chatEnabled")):
-        YT_CHAT_STATE.update(state="disabled" if vid else "no-video-id")
-        return
     token, seen, wait = None, set(), 8.0
     YT_CHAT_STATE.update(state="starting")
     while True:
+        # re-read config every pass so /api/yt-chat/enable takes effect without a
+        # server restart (it previously returned once and never came back)
+        yt = CONFIG.get("youtube") or {}
+        vid = str(yt.get("videoId") or "").strip()
+        if not vid or not bool(yt.get("chatEnabled")):
+            YT_CHAT_STATE.update(state="disabled" if vid else "no-video-id")
+            token = None
+            await asyncio.sleep(5.0)
+            continue
         try:
             if token is None:
                 token = await asyncio.to_thread(yt_chat.fetch_token, vid)

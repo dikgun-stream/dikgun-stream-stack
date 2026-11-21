@@ -24,9 +24,9 @@
     }
   },
   "labels": {
-    "last_follower": "\u2014",
-    "last_sub": "\u2014",
-    "last_tip": "\u2014"
+    "last_follower": "—",
+    "last_sub": "—",
+    "last_tip": "—"
   },
   "chat": {
     "max_messages": 12
@@ -333,5 +333,29 @@
         "done": false
       }
     ]
+  },
+  "youtube": {
+    "videoId": "",
+    "verticalVideoId": "",
+    "chatEnabled": false
+  },
+  "viewers": {
+    "youtubeApiKey": ""
+  },
+  "autoclip": {
+    "enabled": false,
+    "poll_ms": 300,
+    "shot_width": 1920,
+    "hit_debounce": 1.4,
+    "cluster_gap": 6.0,
+    "max_cluster": 15.0,
+    "pre": 4.0,
+    "post": 1.5,
+    "min_hits": 1,
+    "keep_raw": false,
+    "out_dir": "",
+    "threshold": 0.45,
+    "confirm_ocr": true,
+    "confirm_threshold": 0.5
   }
 }

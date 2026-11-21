@@ -25,7 +25,7 @@ from a backup.
 
 | Missing | Where it lives | How to recover |
 |---|---|---|
-| **OBS scene collection** | `%APPDATA%\obs-studio\basic\scenes\DikGun.json` | **Not in git.** Restore from backup, or rebuild with `obs-build/build_scenes.py` (scaffold, not identical) |
+| **OBS scene collection** | `obs/scenes/DikGun.json` | **In git.** Restore with `install.ps1 -Scenes` (copies it into `%APPDATA%\obs-studio\basic\scenes\`), or rebuild with `obs-build/build_scenes.py` (scaffold, not identical) |
 | **Channel config** | `overlay-server/config.json` | Regenerated from defaults on first start — channel name, titles and checklists need re-entering |
 | **Detection indexes** | `laughter_index.json`, `kill_index.json`, `marker_index.json` | Re-run the scanners (hours of CPU) |
 | **Discord token** | `discord-bot/.env` | New token from the Developer Portal |
