@@ -40,6 +40,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 SERVER = Path(r"C:\Users\JR\Documents\deepseek-harness\default-workspace\overlay-server")
+STING = str(HERE / "stingers")   # Blender letter renders
 FFMPEG = r"C:\ffmpeg\ffmpeg.exe"
 FFPROBE = r"C:\ffmpeg\ffprobe.exe"
 
@@ -190,7 +191,7 @@ def resolve(clip: dict) -> Path | None:
 
 # --------------------------------------------------------------------- build
 def extract(src: Path, start: float, length: float, out: Path,
-            glitch: bool = False) -> bool:
+            glitch: bool = False, heavy: bool = False) -> bool:
     """One cut, normalised to the output frame so concat cannot drift.
 
     Output seeking (-i first) is slower than input seeking but exact. Input
@@ -200,8 +201,12 @@ def extract(src: Path, start: float, length: float, out: Path,
     vf = (f"scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"
           f"crop={OUT_W}:{OUT_H},fps={OUT_FPS},setsar=1")
     if glitch:
-        # channels separate for the first ~70ms then snap back
-        vf += ",rgbashift=rh=9:bh=-9:edge=wrap:enable='lt(t,0.07)'"
+        # channels separate then snap back. False drops get a wider shift and a
+        # short pixelate, so the accent is visibly different from the main drop.
+        shift = 18 if heavy else 9
+        vf += f",rgbashift=rh={shift}:bh=-{shift}:edge=wrap:enable='lt(t,0.07)'"
+        if heavy:
+            vf += ",pixelize=w=48:h=27:enable='lt(t,0.05)'"
     cmd = [
         FFMPEG, "-v", "error", "-y",
         "-i", str(src),
@@ -238,22 +243,74 @@ def plan(music: dict, kills: list[dict], t0: float, duration: float,
 
     t_end = t0 + duration
 
-    # first sustained loud run after t0 = where the drop lands
-    first_drop = None
-    run = 0
-    for i, v in enumerate(loud):
-        if hops[i] < t0:
-            continue
-        if v:
-            run += 1
-            if run >= 4:
-                first_drop = float(hops[max(0, i - run + 1)])
-                break
+    # ---- section detection: every loud run, not just the first one.
+    # A single "first_drop" could not distinguish the real payoff from a brief
+    # loud swell, so a false drop got treated as the main event.
+    runs, i = [], 0
+    while i < len(loud):
+        if loud[i] and hops[i] >= t0:
+            j = i
+            while j + 1 < len(loud) and loud[j + 1]:
+                j += 1
+            a, b = float(hops[i]), float(hops[j])
+            if b - a >= 1.0:
+                runs.append((a, b))
+            i = j + 1
         else:
-            run = 0
-    if first_drop is None or first_drop <= t0 + 1.0:
-        first_drop = t0 + duration * 0.55
-    first_drop = min(first_drop, t_end - 1.0)
+            i += 1
+    runs = [(a, min(b, t_end)) for a, b in runs if a < t_end]
+
+    MIN_REAL_DROP = 4.0
+    main_drop = None
+    if runs:
+        best = max(runs, key=lambda r: r[1] - r[0])
+        if best[1] - best[0] >= MIN_REAL_DROP:
+            main_drop = best
+    if main_drop is None:
+        main_drop = (min(t0 + duration * 0.55, t_end - 1.0), t_end)
+    first_drop = main_drop[0]
+
+    # A false drop is a brief swell that stands out from its LOCAL surroundings,
+    # not one that crosses an absolute level - an absolute gate missed the 66-70s
+    # bump entirely because the real drop is only a couple of dB louder.
+    # Measured in dB against a +/-5s baseline: rise >= 6 dB and 1-5s long.
+    env = np.asarray(music["rms"], np.float32)
+    db = 20 * np.log10(np.maximum(env, 1e-6))
+    # Median, not mean: a mean baseline is dragged upward by the swell it is
+    # supposed to expose, which is why the 66-70s bump measured as +2.8 dB and was
+    # rejected. Against a median over +/-8s the same bump reads about +9 dB.
+    win = max(5, int(8.0 * SR / HOP)) | 1
+    from numpy.lib.stride_tricks import sliding_window_view
+    padded = np.pad(db, win // 2, mode="edge")
+    baseline = np.median(sliding_window_view(padded, win), axis=1)
+    rise = db - baseline
+
+    false_drops = []
+    covered = [(a - 0.5, b + 0.5) for a, b in ([main_drop] if main_drop else [])]
+    i = 0
+    while i < len(rise):
+        t = float(hops[i])
+        # 4.5 dB rather than 6: the 66-70s swell peaks at +5.8 dB against the
+        # median baseline, so a 6 dB gate rejected the very thing being hunted.
+        # The absolute floor keeps quiet passages from qualifying on noise.
+        if t < t0 or t >= t_end or rise[i] < 4.5 or db[i] < -17.0:
+            i += 1
+            continue
+        # walk the contiguous above-threshold swell, waiting out short dips
+        j, gap = i, 0
+        while j + 1 < len(rise) and (rise[j + 1] >= 3.0 or gap < int(0.4 * SR / HOP)):
+            gap = gap + 1 if rise[j + 1] < 3.0 else 0
+            j += 1
+        a, b = t, float(hops[j])
+        if 1.0 <= (b - a) <= 6.0 and not any(a < cb and b > ca for ca, cb in covered):
+            false_drops.append((a, b))
+        i = j + 1
+
+    for a, b in false_drops:
+        print(f"  false drop {a:.1f}-{b:.1f}s ({b-a:.1f}s)")
+
+    def in_false(t: float) -> bool:
+        return any(a <= t < b for a, b in false_drops)
 
     # cut grid, floored so the median shot stays near the measured 1.3-1.7s
     MIN_SHOT = 0.85
@@ -329,7 +386,10 @@ def plan(music: dict, kills: list[dict], t0: float, duration: float,
     BUILD_START, BUILD_END = 4.6, 1.9   # shot length at the start vs at the drop
 
     while t < t_end - 0.25:
-        is_drop = (t >= first_drop) or is_loud(t)
+        # false drops still get kills, but they are flagged so the render can
+        # hit them with a heavier glitch than the main drop
+        is_false = in_false(t)
+        is_drop = is_false or (t >= first_drop) or is_loud(t)
         clip = pick_drop() if is_drop else pick()
         remaining = t_end - t
         span = max(0.8, clip["end"] - clip["start"])
@@ -342,7 +402,9 @@ def plan(music: dict, kills: list[dict], t0: float, duration: float,
             seg_len = max(0.7, min(seg_end - t, KILL_TAIL, remaining))
             shots.append({"clip": clip, "start": take_start,
                           "len": max(0.7, min(seg_len, span)),
-                          "mode": "kill", "at": round(t, 2)})
+                          "mode": "kill",
+                          "heavy": is_false,
+                          "at": round(t, 2)})
         else:
             # ---- build: progressively busier as the drop approaches
             p = (t - t0) / max(0.5, first_drop - t0)
@@ -398,6 +460,35 @@ def build(args) -> int:
 
     # 2-frame colour accents, spliced into the concat list rather than rendered
     # per occurrence - the concat demuxer happily lists the same file twice.
+    # ---- Blender stingers, used instead of colour flashes
+    stinger_files: list[Path] = []
+
+    def build_stinger(ch: str) -> Path | None:
+        src_dir = os.path.join(STING, ch)
+        if not os.path.isdir(src_dir):
+            return None
+        out = segdir / f"stinger_{ch}.mp4"
+        if out.is_file():
+            return out
+        r = subprocess.run([
+            FFMPEG, "-v", "error", "-y", "-framerate", str(OUT_FPS),
+            "-i", os.path.join(src_dir, "f_%04d.png"),
+            "-vf", f"scale={OUT_W}:{OUT_H},setsar=1",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(out)],
+            capture_output=True, timeout=600)
+        return out if r.returncode == 0 and out.is_file() else None
+
+    for ch in "DIKGUN":
+        p = build_stinger(ch)
+        if p:
+            stinger_files.append(p)
+    if stinger_files:
+        print(f"  stingers available: {len(stinger_files)} "
+              f"({', '.join(p.stem.replace('stinger_', '') for p in stinger_files)})")
+    else:
+        print("  no stingers found - falling back to colour flashes")
+
     def make_flash(name: str, colour: str) -> Path:
         p = segdir / name
         subprocess.run([
@@ -417,7 +508,9 @@ def build(args) -> int:
         if not src:
             continue
         out = segdir / f"seg_{i:03d}.mp4"
-        if extract(src, s["start"], s["len"], out, glitch=(s["mode"] == "kill")):
+        if extract(src, s["start"], s["len"], out,
+                   glitch=(s["mode"] == "kill"),
+                   heavy=bool(s.get("heavy"))):
             made.append(out)
         else:
             print(f"    cut {i} failed ({s['clip']['game']})")
@@ -429,18 +522,24 @@ def build(args) -> int:
     # That cadence and ratio come from measuring the reference edits.
     listing_lines = []
     flash_every = 6
-    n_flash_b = n_flash_w = 0
+    n_sting = n_flash_b = n_flash_w = 0
     for i, p in enumerate(made):
         shot = shots[i] if i < len(shots) else None
         if (shot and shot["mode"] == "kill" and i % flash_every == 0 and i > 0):
-            if (i // flash_every) % 4 == 3:
+            if stinger_files:
+                listing_lines.append(f"file '{stinger_files[n_sting % len(stinger_files)].name}'")
+                n_sting += 1
+            elif (i // flash_every) % 4 == 3:
                 listing_lines.append(f"file '{white.name}'")
                 n_flash_w += 1
             else:
                 listing_lines.append(f"file '{black.name}'")
                 n_flash_b += 1
         listing_lines.append(f"file '{p.name}'")
-    print(f"  flash accents: {n_flash_b} black, {n_flash_w} white")
+    if stinger_files:
+        print(f"  stinger accents: {n_sting}")
+    else:
+        print(f"  flash accents: {n_flash_b} black, {n_flash_w} white")
 
     listing = segdir / "list.txt"
     listing.write_text("\n".join(listing_lines), encoding="utf-8")
