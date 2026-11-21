@@ -175,3 +175,21 @@ ffmpeg -framerate 60 -i outro_frames/f_%04d.png `
 | A clip looks wrong | edit its `start` in the EDL, re-render (18s) |
 | Suspect a stale render | add `-NoCache` |
 | Output longer/shorter than wanted | the outro reserves its own time; `-Duration` is the **total** |
+
+---
+
+## The one syntax trap
+
+`-Game` takes **ONE comma-separated string**, not several arguments.
+
+```powershell
+# WRONG - PowerShell binds each extra name to the NEXT parameter,
+# so "Rainbow Six Siege" becomes -Out and ffmpeg fails on the filename
+-Game "Apex Legends", "Rainbow Six Siege", "Battlefield 6"
+
+# RIGHT
+-Game "Apex Legends,Rainbow Six Siege,Battlefield 6"
+```
+
+The script now refuses positional binding, so this fails immediately with
+"A positional parameter cannot be found" instead of doing something surprising.

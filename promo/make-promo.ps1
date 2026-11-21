@@ -17,10 +17,10 @@
 # different places. --Start picks where in the track the 60/90 seconds begin.
 # For Black Sky: 42 = build then drop, 78 = straight into the drop.
 
-[CmdletBinding()]
+[CmdletBinding(PositionalBinding = $false)]
 param(
     [Parameter(Mandatory = $true)][string]$Music,
-    [string]$Game = "all",
+    [string[]]$Game = @("all"),
     [double]$Duration = 60,
     [double]$Start = 0,
     [string]$Out = "",
@@ -66,8 +66,25 @@ try {
     throw "overlay server required"
 }
 
+# -Game accepts either one comma-separated string or several tokens. With
+# `powershell -File`, "A","B" arrives as literal "A," and "B", so normalise:
+# split on commas, trim, drop blanks, rejoin.
+$gameParts = @()
+foreach ($g in $Game) { $gameParts += ($g -split ',') }
+$GameCsv = (($gameParts | ForEach-Object { $_.Trim() } | Where-Object { $_ }) -join ',')
+if (-not $GameCsv) { $GameCsv = 'all' }
+
+# A stray game name binding into -Out is what happens when several arguments are
+# passed to -Game; ffmpeg then fails with "Unable to find a suitable output
+# format" for the game name. Catch it here with something actionable instead.
+if ($Out -and $Out -notmatch '\.(mp4|mkv|mov|webm)$') {
+    throw ("-Out '$Out' does not look like a video filename. " +
+           "If you meant several games, pass them as ONE comma-separated string: " +
+           "-Game 'Apex Legends,Rainbow Six Siege,Battlefield 6'")
+}
+
 if (-not $Out) {
-    $slug = ($Game -replace '[^A-Za-z0-9]+', '-').Trim('-').ToLower()
+    $slug = ($GameCsv -replace '[^A-Za-z0-9]+', '-').Trim('-').ToLower()
     if (-not $slug -or $slug -eq 'all') { $slug = 'mixed' }
     $Out = "promo-$slug-$([int]$Duration)s.mp4"
 }
@@ -80,8 +97,8 @@ $args = @(
     '--out', $Out
 )
 
-if ($Game -and $Game -ne 'all') {
-    $args += @('--games', $Game)
+if ($GameCsv -and $GameCsv -ne 'all') {
+    $args += @('--games', $GameCsv)
 }
 $args += @('--mode', $Mode)
 if ($Prefer) { $args += @('--prefer', $Prefer) }
@@ -97,7 +114,7 @@ if ($NoCache) { $args += '--no-cache' }
 if ($DryRun) { $args += '--dry-run' }
 
 Write-Host ""
-Write-Host "  game     : $Game"
+Write-Host "  game     : $GameCsv"
 Write-Host "  music    : $Music"
 Write-Host "  window   : ${Start}s + ${Duration}s"
 Write-Host "  mode     : $Mode"
