@@ -124,3 +124,19 @@ For a specific moment, pin it:
 -Pin "Q:\Game Clips\BF6\Cobra-M-J2J-1K.mp4|12|19|32.0|3.0"
 #    path|src_start|src_end|video_start|length
 ```
+
+## Promo vs regular edit
+
+One switch, because stingers are the only difference:
+
+```powershell
+# branded promo - letter cards on the accents (default)
+powershell -File make-promo.ps1 -Music song.mp3 -Game all -Duration 90 -Outro outro.mp4
+
+# regular music edit - identical cut, no letter cards
+powershell -File make-promo.ps1 -Music song.mp3 -Game all -Mode edit -Duration 180
+```
+
+`--mode edit` only stops the stingers being built or inserted. The cut grid, the
+kill-on-beat selection, the false-drop handling and the kill distortion are all
+unchanged, so a music edit keeps the same intensity as the promo.

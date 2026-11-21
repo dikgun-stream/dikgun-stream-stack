@@ -3,6 +3,11 @@
 #   powershell -File make-promo.ps1 -Music "black-sky.m4a" -Game "Apex Legends" -Duration 60
 #   powershell -File make-promo.ps1 -Music song.mp3 -Game all -Duration 90 -Out promo.mp4
 #   powershell -File make-promo.ps1 -Music song.mp3 -Game "Deadlock" -Start 42 -DryRun
+#   powershell -File make-promo.ps1 -Music song.mp3 -Game all -Mode edit -Duration 180
+#
+# -Mode promo (default) cuts the DIKGUN letter cards in on the accents.
+# -Mode edit is the same cut, same kill/music interplay, just no letter cards -
+# for regular music edits rather than a branded promo.
 #
 # Wrap of promo_build.py that fills in the paths and checks the things that
 # actually fail: the music file, and the overlay server that supplies kill
@@ -22,6 +27,7 @@ param(
     [string]$Outro = "",
     [string]$Prefer = "",
     [string]$Pin = "",
+    [ValidateSet('promo', 'edit')][string]$Mode = 'promo',
     [switch]$DryRun
 )
 
@@ -61,6 +67,7 @@ $args = @(
 if ($Game -and $Game -ne 'all') {
     $args += @('--games', $Game)
 }
+$args += @('--mode', $Mode)
 if ($Prefer) { $args += @('--prefer', $Prefer) }
 if ($Pin)    { $args += @('--pin', $Pin) }
 if ($Outro) {
@@ -73,6 +80,7 @@ Write-Host ""
 Write-Host "  game     : $Game"
 Write-Host "  music    : $Music"
 Write-Host "  window   : ${Start}s + ${Duration}s"
+Write-Host "  mode     : $Mode"
 Write-Host "  output   : $Out"
 if ($Outro) { Write-Host "  outro    : $Outro" }
 Write-Host ""

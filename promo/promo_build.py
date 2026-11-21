@@ -643,14 +643,18 @@ def build(args) -> int:
     # cumulative stages: each clip contains every letter landed so far, so the
     # word builds D -> DI -> DIK -> DIKG -> DIKGU -> DIKGUN with the camera
     # pulling back. See blender_letters.py.
-    for stage in ("D", "DI", "DIK", "DIKG", "DIKGU", "DIKGUN"):
-        p = build_stinger(stage)
-        if p:
-            stinger_files.append(p)
+    if args.mode == "edit":
+        stinger_files = []
+        print("  mode: edit - no letter stingers")
+    else:
+        for stage in ("D", "DI", "DIK", "DIKG", "DIKGU", "DIKGUN"):
+            p = build_stinger(stage)
+            if p:
+                stinger_files.append(p)
     if stinger_files:
         print(f"  stingers available: {len(stinger_files)} "
               f"({', '.join(p.stem.replace('stinger_', '') for p in stinger_files)})")
-    else:
+    elif args.mode == "promo":
         print("  no stingers found - falling back to colour flashes")
 
     def make_flash(name: str, colour: str) -> Path:
@@ -696,7 +700,7 @@ def build(args) -> int:
             accent_before.add(_i)
             _n += 1
 
-    if stinger_secs and accent_before:
+    if stinger_secs and accent_before and args.mode == "promo":
         # A single kill cut is ~0.7s, so one stinger cannot be absorbed by the
         # shot after it. Carry the remainder forward across as many shots as it
         # takes, stopping each shot at a 0.4s floor.
@@ -743,7 +747,7 @@ def build(args) -> int:
         # that the accents stop - a repeated letter read as "DIKGUND", which is
         # not the name. The remaining accent positions become plain hard cuts,
         # which matches the measured reference edits anyway.
-        if i in accent_before:
+        if i in accent_before and args.mode == "promo":
             if stinger_files and n_sting < len(stinger_files):
                 listing_lines.append(f"file '{stinger_files[n_sting % len(stinger_files)].name}'")
                 n_sting += 1
@@ -766,7 +770,9 @@ def build(args) -> int:
         listing_lines.append(f"file '{outro_seg.name}'")
         print(f"  outro appended ({outro_secs:.2f}s)")
 
-    if stinger_files:
+    if args.mode == "edit":
+        print("  no accents inserted")
+    elif stinger_files:
         print(f"  stinger accents: {n_sting}")
     else:
         print(f"  flash accents: {n_flash_b} black, {n_flash_w} white")
@@ -814,6 +820,9 @@ def main() -> int:
                     help="seconds into the track to begin at")
     ap.add_argument("--outro", default="", help="mp4 to append as the outro; "
                     "gameplay is shortened to make room for it")
+    ap.add_argument("--mode", choices=("promo", "edit"), default="promo",
+                    help="promo = with DIKGUN letter stingers; edit = same cut and "
+                         "the same kill/music interplay, just no letter cards")
     ap.add_argument("--pin", default="", help="force a source range into a window: "
                     "PATH|src_start|src_end|at|len, semicolon-separated for several")
     ap.add_argument("--prefer", default="",
