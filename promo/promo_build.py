@@ -486,8 +486,11 @@ def build(args) -> int:
             capture_output=True, timeout=600)
         return out if r.returncode == 0 and out.is_file() else None
 
-    for ch in "DIKGUN":
-        p = build_stinger(ch)
+    # cumulative stages: each clip contains every letter landed so far, so the
+    # word builds D -> DI -> DIK -> DIKG -> DIKGU -> DIKGUN with the camera
+    # pulling back. See blender_letters.py.
+    for stage in ("D", "DI", "DIK", "DIKG", "DIKGU", "DIKGUN"):
+        p = build_stinger(stage)
         if p:
             stinger_files.append(p)
     if stinger_files:
@@ -512,6 +515,48 @@ def build(args) -> int:
     black = make_flash("flash_black.mp4", "black")
     white = make_flash("flash_white.mp4", "white")
 
+    # A stinger occupies video time that the music does not wait for. Inserting
+    # 1.2s clips without compensating pushed every later cut late - the v9 list
+    # summed to 97.68s against a 90s plan. The duration is therefore taken out of
+    # the shot that follows, which keeps kills on the beat.
+    stinger_secs = 0.0
+    if stinger_files:
+        try:
+            d = subprocess.run(
+                [FFPROBE, "-v", "error", "-show_entries", "format=duration",
+                 "-of", "csv=p=0", str(stinger_files[0])],
+                capture_output=True, text=True, timeout=120).stdout.strip()
+            stinger_secs = float(d or 0)
+        except (ValueError, subprocess.SubprocessError):
+            stinger_secs = 0.0
+    if stinger_secs:
+        print(f"  stinger duration {stinger_secs:.2f}s - compensated out of the "
+              f"following shots")
+
+    flash_every = 6
+    accent_before: set[int] = set()
+    _n = 0
+    for _i, _s in enumerate(shots):
+        if (_s["mode"] == "kill" and _i % flash_every == 0 and _i > 0
+                and stinger_files and _n < len(stinger_files)):
+            accent_before.add(_i)
+            _n += 1
+
+    if stinger_secs and accent_before:
+        # A single kill cut is ~0.7s, so one stinger cannot be absorbed by the
+        # shot after it. Carry the remainder forward across as many shots as it
+        # takes, stopping each shot at a 0.4s floor.
+        carry = 0.0
+        for _i, _s in enumerate(shots):
+            if _i in accent_before:
+                carry += stinger_secs
+            if carry > 0.0:
+                take = min(carry, max(0.0, _s["len"] - 0.40))
+                _s["len"] -= take
+                carry -= take
+        if carry > 0.05:
+            print(f"  warning: {carry:.2f}s of stinger time could not be absorbed")
+
     made: list = []
     for i, s in enumerate(shots):
         src = resolve(s["clip"])
@@ -531,12 +576,15 @@ def build(args) -> int:
     # Flash accents: one every ~6s on a drop cut, mostly black, occasional white.
     # That cadence and ratio come from measuring the reference edits.
     listing_lines = []
-    flash_every = 6
     n_sting = n_flash_b = n_flash_w = 0
     for i, p in enumerate(made):
         shot = shots[i] if i < len(shots) else None
-        if (shot and shot["mode"] == "kill" and i % flash_every == 0 and i > 0):
-            if stinger_files:
+        # The letters spell the channel name, so they cycle exactly ONCE. Beyond
+        # that the accents stop - a repeated letter read as "DIKGUND", which is
+        # not the name. The remaining accent positions become plain hard cuts,
+        # which matches the measured reference edits anyway.
+        if i in accent_before:
+            if stinger_files and n_sting < len(stinger_files):
                 listing_lines.append(f"file '{stinger_files[n_sting % len(stinger_files)].name}'")
                 n_sting += 1
             elif (i // flash_every) % 4 == 3:
