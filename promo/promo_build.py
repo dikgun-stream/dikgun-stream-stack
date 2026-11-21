@@ -780,9 +780,23 @@ def build(args) -> int:
     listing = segdir / "list.txt"
     listing.write_text("\n".join(listing_lines), encoding="utf-8")
 
+    # CONCAT: re-encode the audio, copy only the video.
+    #
+    # Concatenating with plain -c copy keeps each segment's independently encoded
+    # AAC frames, and every join lands two packets on the same timestamp. On this
+    # 90s cut that produced 74 duplicate-timestamp audio packets, all of them on
+    # cut boundaries, plus a negative start time (-0.021s) from unhandled encoder
+    # delay. VLC plays through it; YouTube's re-encode turns each one into an
+    # audible glitch. aresample=async=1 rebuilds a continuous timeline and
+    # first_pts=0 pins the start at zero.
     silent = segdir / "video.mp4"
     subprocess.run([FFMPEG, "-v", "error", "-y", "-f", "concat", "-safe", "0",
-                    "-i", str(listing), "-c", "copy", str(silent)],
+                    "-i", str(listing),
+                    "-c:v", "copy",
+                    "-af", "aresample=async=1:first_pts=0",
+                    "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+                    "-avoid_negative_ts", "make_zero",
+                    "-movflags", "+faststart", str(silent)],
                    check=True, timeout=1800)
 
     out = Path(args.out)
@@ -802,6 +816,7 @@ def build(args) -> int:
         "-filter_complex", filt, "-map", "0:v", "-map", "[a]",
         "-t", f"{duration:.3f}",
         "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+        "-avoid_negative_ts", "make_zero",
         "-movflags", "+faststart", str(out),
     ], check=True, timeout=1800)
 
