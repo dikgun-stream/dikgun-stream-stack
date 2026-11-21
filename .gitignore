@@ -63,3 +63,6 @@ promo/outro.mp4
 promo/mark_rgba.png
 promo/mark_left.png
 promo/mark_right.png
+
+# assembled from --songs, regenerated on every run
+promo/_soundtrack.mp4

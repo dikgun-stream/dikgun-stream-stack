@@ -193,3 +193,26 @@ ffmpeg -framerate 60 -i outro_frames/f_%04d.png `
 
 The script now refuses positional binding, so this fails immediately with
 "A positional parameter cannot be found" instead of doing something surprising.
+
+---
+
+## Two songs in one video
+
+Use `--songs` instead of `--music`. Each entry is `path|start|end`; slices play in
+order and entries repeat if the list is shorter than `-Duration`.
+
+```powershell
+python promo_build.py `
+  --songs "black-sky.m4a|42|78; WUBS.opus|0|40; black-sky.m4a|78|120" `
+  --duration 60 --games "Apex Legends" --out two-song.mp4
+```
+
+The slices are trimmed, cross-faded at the joins and concatenated into one track
+FIRST, then analysed. That means onset detection, the build/drop split and the
+kill-on-beat grid all come from the assembled timeline, so a join behaves like any
+other moment - there is no special case downstream.
+
+- 15ms fade at each internal join: kills the click, inaudible as a fade
+- `-Start` is ignored (the assembled timeline starts at 0)
+- Add `-DryRun` first: the log prints each slice and its length, so you can see
+  exactly where the songs meet before spending an encode

@@ -634,10 +634,97 @@ def apply_pin(shots: list[dict], path: str, src_start: float, src_end: float,
     return out, pin
 
 
+FADE = 0.015      # seconds; kills the click at a join without being audible
+
+
+def parse_songs(spec: str) -> list[tuple[str, float, float]]:
+    """Parse 'path|start|end; path|start|end' into validated tuples."""
+    out = []
+    for raw in (spec or "").split(";"):
+        raw = raw.strip()
+        if not raw:
+            continue
+        parts = [v.strip() for v in raw.split("|")]
+        if len(parts) < 3:
+            raise SystemExit(f"--songs entry needs PATH|start|end : {raw}")
+        path = parts[0].strip('"')
+        if not os.path.isfile(path):
+            alt = os.path.join(HERE, path)
+            if os.path.isfile(alt):
+                path = alt
+            else:
+                raise SystemExit(f"--songs: file not found: {path}")
+        a, b = float(parts[1]), float(parts[2])
+        if b <= a:
+            raise SystemExit(f"--songs: end must be after start : {raw}")
+        out.append((path, a, b))
+    if not out:
+        raise SystemExit("--songs was empty")
+    return out
+
+
+def assemble_songs(spec: str, duration: float, out_path: Path) -> Path:
+    """Decode, trim, fade and concat the slices into one track of `duration`."""
+    entries = parse_songs(spec)
+
+    parts: list[tuple[str, float, float]] = []
+    total = 0.0
+    i = 0
+    while total < duration - 1e-6:
+        path, a, b = entries[i % len(entries)]
+        seg = min(b - a, duration - total)
+        if seg <= 1e-6:
+            break
+        parts.append((path, a, seg))
+        total += seg
+        i += 1
+        if i > 400:            # guard against a runaway loop
+            break
+
+    inputs, chains, labels = [], [], []
+    for idx, (path, start, seg) in enumerate(parts):
+        inputs += ["-ss", f"{start:.3f}", "-t", f"{seg:.3f}", "-i", path]
+        # NOTE: the input label must sit directly against the first filter - a
+        # comma after it makes ffmpeg read an empty filter name.
+        filters = [f"atrim=0:{seg:.3f}", "asetpts=PTS-STARTPTS"]
+        if idx > 0:
+            filters.append(f"afade=t=in:st=0:d={FADE}")
+        if idx < len(parts) - 1:
+            filters.append(f"afade=t=out:st={max(0.0, seg - FADE):.3f}:d={FADE}")
+        filters.append("aresample=48000")
+        chains.append(f"[{idx}:a]" + ",".join(filters) + f"[a{idx}]")
+        labels.append(f"[a{idx}]")
+
+    fc = ";".join(chains) + ";" + "".join(labels) + f"concat=n={len(parts)}:v=0:a=1[out]"
+
+    cmd = [FFMPEG, "-v", "error", "-y", *inputs,
+           "-filter_complex", fc, "-map", "[out]",
+           "-t", f"{duration:.3f}",
+           "-c:a", "aac", "-b:a", "256k", "-ar", "48000", "-ac", "2",
+           "-movflags", "+faststart", str(out_path)]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+    if r.returncode != 0:
+        raise SystemExit(f"song assembly failed: {(r.stderr or '').strip()[:300]}")
+
+    print(f"  soundtrack assembled: {len(parts)} slice(s) -> {duration:.2f}s")
+    for path, start, seg in parts:
+        print(f"    {os.path.basename(path):28} {start:6.2f}s +{seg:.2f}s")
+    return out_path
+
+
 def build(args) -> int:
-    music_path = Path(args.music)
-    if not music_path.is_file():
-        raise SystemExit(f"music not found: {music_path}")
+    songs = getattr(args, "songs", "") or ""
+    if songs:
+        # --start is meaningless against a timeline that already begins at zero
+        if float(getattr(args, "start", 0.0)) > 0.01:
+            print("  note: --start is ignored with --songs; the timeline starts at 0")
+        args.start = 0.0
+        music_path = HERE / "_soundtrack.mp4"
+        assemble_songs(songs, float(args.duration), music_path)
+    else:
+        music_path = Path(args.music)
+        if not music_path.is_file():
+            raise SystemExit(f"music not found: {music_path}")
 
     print(f"  analysing {music_path.name} ...")
     music = analyse_music(music_path)
@@ -1001,7 +1088,12 @@ def build(args) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--music", required=True, help="audio file (wav/mp3/m4a)")
+    ap.add_argument("--music", default="",
+                    help="single audio file (wav/mp3/m4a/opus)")
+    ap.add_argument("--songs", default="",
+                    help="assemble the soundtrack from several tracks: "
+                         "\"path|start|end; path|start|end\" - entries repeat to "
+                         "fill --duration")
     ap.add_argument("--out", default="promo.mp4")
     ap.add_argument("--games", default="", help="comma list; empty = every game with kills")
     ap.add_argument("--duration", type=float, default=60.0)
@@ -1023,7 +1115,10 @@ def main() -> int:
     ap.add_argument("--prefer", default="",
                     help="comma list of games to favour on drop cuts")
     ap.add_argument("--dry-run", action="store_true")
-    return build(ap.parse_args())
+    parsed = ap.parse_args()
+    if not parsed.music and not parsed.songs:
+        ap.error("one of --music or --songs is required")
+    return build(parsed)
 
 
 if __name__ == "__main__":
