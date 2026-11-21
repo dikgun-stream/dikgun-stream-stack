@@ -86,3 +86,41 @@ ffmpeg -framerate 60 -i outro_frames/f_%04d.png `
   -pix_fmt yuv420p -c:a aac -b:a 192k -ar 48000 -ac 2 -shortest `
   -movflags +faststart outro.mp4
 ```
+
+## Making a highlight for one game
+
+`make-promo.ps1` wraps the build with the checks that actually fail:
+
+```powershell
+# an Apex-only 60s highlight, with the outro
+powershell -File make-promo.ps1 -Music black-sky.m4a -Game "Apex Legends" `
+  -Duration 60 -Start 42 -Outro outro.mp4
+
+# mixed games, 90s
+powershell -File make-promo.ps1 -Music black-sky.m4a -Game all -Duration 90 `
+  -Prefer "Battlefield 6" -Outro outro.mp4
+```
+
+`-Start` picks where in the track the window begins, which decides whether you get
+a build-up before the drop. Both are worth trying on a new track: run `-DryRun`
+and read the cut list before committing to an encode.
+
+Available kill windows per game, as of the last scan:
+
+| Game | clips | windows |
+|---|---|---|
+| Apex Legends | 47 | 47 |
+| Battlefield 6 | 33 | 33 |
+| The Finals | 23 | 23 |
+| Rainbow Six Siege | 21 | 21 |
+| Deadlock | 10 | 10 |
+
+Deadlock has the fewest, so a 60s single-game Deadlock cut repeats footage. Either
+run longer or mix games. Tarkov has no kill detection at all - laughter only.
+
+For a specific moment, pin it:
+
+```powershell
+-Pin "Q:\Game Clips\BF6\Cobra-M-J2J-1K.mp4|12|19|32.0|3.0"
+#    path|src_start|src_end|video_start|length
+```
