@@ -56,3 +56,33 @@ drifted +7.68s over 90s; it is now -0.06s.
   Tarkov has none.
 - The generator cannot tell whether a shot *looks* good; it trusts the kill index.
 - Output is 1080p60 at CRF 20, roughly 200 MB per 90 seconds.
+
+## Outro
+
+`render_outro.py` builds the end card, then `promo_build.py --outro outro.mp4`
+appends it and shortens the gameplay to make room:
+
+| t | what |
+|---|---|
+| 0.30s | DIKGUN snaps in (on a kick) |
+| 2.00s | D and G slide together (on a kick); I K U N vanish |
+| 2.18s | impact - flash, shake, the DG mark appears |
+| 2.60s | "BACK AND BETTER THAN EVER" fades in |
+| 6.80s -> 8.00s | fade to black |
+
+The mark is the real brand artwork. `brand/dg-mark.svg` is three `<polygon>`
+elements, so it is drawn with `ImageDraw.polygon` rather than rasterising the SVG.
+The brand mark is D in ink and G in red; on a dark frame an ink D disappears, so
+the D is inverted to cream and the red G is kept - which also matches the
+DIK-cream / GUN-red rule used in the letter cards.
+
+Encode the frames with a silent audio track before passing them in:
+
+```powershell
+python render_outro.py --out outro_frames --dur 8.0 --beats 0.30,2.00
+ffmpeg -framerate 60 -i outro_frames/f_%04d.png `
+  -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=48000 `
+  -vf "scale=1920:1080,setsar=1" -c:v libx264 -preset veryfast -crf 19 `
+  -pix_fmt yuv420p -c:a aac -b:a 192k -ar 48000 -ac 2 -shortest `
+  -movflags +faststart outro.mp4
+```

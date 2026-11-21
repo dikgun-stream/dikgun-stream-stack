@@ -441,8 +441,26 @@ def build(args) -> int:
 
     t0 = max(0.0, min(args.start, music["duration"] - 1.0))
     duration = min(args.duration, music["duration"] - t0)
+
+    # The outro is part of the same window: gameplay is planned for the
+    # remainder, so the music still spans the full duration and nothing is cut.
+    outro_path = getattr(args, "outro", "") or ""
+    outro_secs = 0.0
+    if outro_path and os.path.isfile(outro_path):
+        try:
+            d = subprocess.run(
+                [FFPROBE, "-v", "error", "-show_entries", "format=duration",
+                 "-of", "csv=p=0", outro_path],
+                capture_output=True, text=True, timeout=120).stdout.strip()
+            outro_secs = float(d or 0)
+        except (ValueError, subprocess.SubprocessError):
+            outro_secs = 0.0
+        if outro_secs:
+            print(f"  outro {outro_secs:.2f}s - gameplay planned for "
+                  f"{duration - outro_secs:.2f}s")
+    gameplay = max(1.0, duration - outro_secs)
     prefer = [g.strip() for g in (args.prefer or "").split(",") if g.strip()]
-    shots = plan(music, kills, t0, duration, prefer)
+    shots = plan(music, kills, t0, gameplay, prefer)
     loud_n = sum(1 for s in shots if s["mode"] == "kill")
     print(f"  planned {len(shots)} cuts over {duration:.1f}s "
           f"({loud_n} on drops, {len(shots) - loud_n} build-up)")
@@ -594,6 +612,18 @@ def build(args) -> int:
                 listing_lines.append(f"file '{black.name}'")
                 n_flash_b += 1
         listing_lines.append(f"file '{p.name}'")
+    if outro_secs:
+        outro_seg = segdir / "outro_seg.mp4"
+        subprocess.run([FFMPEG, "-v", "error", "-y", "-i", outro_path,
+                        "-vf", f"scale={OUT_W}:{OUT_H},setsar=1,fps={OUT_FPS}",
+                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "19",
+                        "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
+                        "-ar", "48000", "-ac", "2", "-shortest",
+                        "-movflags", "+faststart", str(outro_seg)],
+                       check=True, timeout=1800)
+        listing_lines.append(f"file '{outro_seg.name}'")
+        print(f"  outro appended ({outro_secs:.2f}s)")
+
     if stinger_files:
         print(f"  stinger accents: {n_sting}")
     else:
@@ -640,6 +670,8 @@ def main() -> int:
     ap.add_argument("--duration", type=float, default=60.0)
     ap.add_argument("--start", type=float, default=0.0,
                     help="seconds into the track to begin at")
+    ap.add_argument("--outro", default="", help="mp4 to append as the outro; "
+                    "gameplay is shortened to make room for it")
     ap.add_argument("--prefer", default="",
                     help="comma list of games to favour on drop cuts")
     ap.add_argument("--dry-run", action="store_true")

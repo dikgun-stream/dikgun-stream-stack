@@ -54,3 +54,7 @@ promo/stingers/
 
 # CC0 textures - fetch with promo/get_textures.ps1, do not commit binaries
 promo/cracked_*.jpg
+
+# generated outro frames and the encoded clip
+promo/outro_frames/
+promo/outro.mp4
