@@ -218,7 +218,7 @@ def measure(ob):
     return (max(xs) - min(xs), max(zs) - min(zs), -min(zs))
 
 
-def make_crack_plane(centre_x, impact_frame, size=9.0):
+def make_crack_plane(centre_x, impact_frame, size=15.0):
     """Glowing fracture under the newest letter, from the CC0 displacement map.
 
     The displacement map's cracks are the DARK values, so a ColorRamp inverts them
@@ -229,7 +229,7 @@ def make_crack_plane(centre_x, impact_frame, size=9.0):
         print(f"[blender] warning: {TEX['disp']} missing - run download first")
         return None
 
-    bpy.ops.mesh.primitive_plane_add(size=size, location=(centre_x, 0, 0.006))
+    bpy.ops.mesh.primitive_plane_add(size=size, location=(centre_x, 0, 0.010))
     p = bpy.context.object
     p.name = "Crack"
     mat = bpy.data.materials.new("CrackMat")
@@ -246,11 +246,13 @@ def make_crack_plane(centre_x, impact_frame, size=9.0):
     tdisp.image = _img(TEX["disp"], non_colour=True)
     tree.links.new(vec, tdisp.inputs["Vector"])
 
+    # Calibrated to THIS map: measured min 0.243, p05 0.443, median 0.502, and
+    # only 5.8% of pixels sit below 0.45. The original ramp went white at 0.00 and
+    # black by 0.42, so essentially nothing glowed and the crack looked absent.
     mask = nt.new("ShaderNodeValToRGB")
-    # invert: the map is dark inside the cracks, and we want those to glow
-    mask.color_ramp.elements[0].position = 0.0
+    mask.color_ramp.elements[0].position = 0.40
     mask.color_ramp.elements[0].color = (1, 1, 1, 1)
-    mask.color_ramp.elements[1].position = 0.42
+    mask.color_ramp.elements[1].position = 0.50
     mask.color_ramp.elements[1].color = (0, 0, 0, 1)
     tree.links.new(tdisp.outputs["Color"], mask.inputs["Fac"])
 
@@ -259,7 +261,7 @@ def make_crack_plane(centre_x, impact_frame, size=9.0):
 
     mul = nt.new("ShaderNodeMath")
     mul.operation = "MULTIPLY"
-    mul.inputs[1].default_value = 2.4
+    mul.inputs[1].default_value = 4.5
     tree.links.new(mask.outputs["Color"], mul.inputs[0])
     tree.links.new(mul.outputs[0], emit.inputs["Strength"])
 
@@ -272,13 +274,13 @@ def make_crack_plane(centre_x, impact_frame, size=9.0):
     p.scale = (0.03, 0.03, 1.0)
     p.keyframe_insert("scale", frame=impact_frame)
     p.scale = (1.0, 1.0, 1.0)
-    p.keyframe_insert("scale", frame=impact_frame + 4)
+    p.keyframe_insert("scale", frame=impact_frame + 3)
     _set_ease(p, before=(1e9, "LINEAR", None), after=(0, "QUAD"))
     return p
 
 
-def add_camera_for(width, height):
-    """Frame the accumulated word, then dolly out during the clip."""
+def add_camera_for(width, height, shake=True):
+    """Frame the accumulated word, dolly out slowly, and jolt on impact."""
     hfov = 2.0 * math.atan(SENSOR / 2.0 / CAM_LENS)
     aspect = 1920.0 / 1080.0
     vfov = 2.0 * math.atan(math.tan(hfov / 2.0) / aspect)
@@ -295,13 +297,17 @@ def add_camera_for(width, height):
     cam_z = height * 0.58
     target_z = height * 0.46
     tilt = math.atan2(cam_z - target_z, d)
-    cam.rotation_euler = (math.radians(90) - tilt, 0, 0)
+    base_rot = (math.radians(90) - tilt, 0, 0)
+    base_loc = (0, -d, cam_z)
 
-    # slow pull back: 12% further away by the end of the clip
-    cam.location = (0, -d, cam_z)
+    cam.location = base_loc
+    cam.rotation_euler = base_rot
     cam.keyframe_insert("location", frame=1)
     cam.location = (0, -d * 1.12, cam_z * 1.05)
     cam.keyframe_insert("location", frame=TOTAL)
+
+    if shake:
+        add_impact_shake(cam, base_loc, base_rot)
 
     bpy.context.scene.camera = cam
     return cam
@@ -333,18 +339,50 @@ def add_lights(spread):
         bg.inputs["Strength"].default_value = 0.3
 
 
-def animate_fall(ob, rest_z):
-    """Rigid fall to rest_z (the height that puts the glyph ON the ground)."""
+def animate_fall(ob, rest_z, x):
+    """Rigid fall to (x, 0, rest_z).
+
+    x MUST be preserved. The previous version hardcoded 0, so every falling
+    letter dropped through the middle of the word instead of into its own slot -
+    that is the letter clipping through the others.
+    """
     top = rest_z + 12.0
-    ob.location = (0, 0, top)
+    ob.location = (x, 0, top)
     ob.keyframe_insert("location", frame=1)
-    ob.location = (0, 0, rest_z + 2.0)
-    ob.keyframe_insert("location", frame=int(FALL_END * 0.72))
-    ob.location = (0, 0, rest_z)
+    ob.location = (x, 0, rest_z + 1.4)
+    ob.keyframe_insert("location", frame=max(2, int(FALL_END * 0.80)))
+    ob.location = (x, 0, rest_z)
     ob.keyframe_insert("location", frame=FALL_END)
-    ob.location = (0, 0, rest_z)
+    ob.location = (x, 0, rest_z)
     ob.keyframe_insert("location", frame=TOTAL)
     _set_ease(ob, before=(FALL_END, "QUAD", "EASE_IN"), after=(0, "LINEAR"))
+
+
+def add_impact_shake(cam, base_loc, base_rot):
+    """Camera jolt on the impact frame, decaying over ~5 frames.
+
+    Parented to an empty so the shake is additive: the camera keeps its own slow
+    dolly-out keyframes, and the rig only jolts.
+    """
+    bpy.ops.object.empty_add(type="PLAIN_AXES", location=(0, 0, 0))
+    rig = bpy.context.object
+    rig.name = "CamRig"
+    cam.parent = rig
+    cam.location = base_loc
+    cam.rotation_euler = base_rot
+
+    amp = [0.30, 0.22, 0.13, 0.07, 0.03]
+    rig.location = (0, 0, 0)
+    rig.keyframe_insert("location", frame=FALL_END - 1)
+    for i, a in enumerate(amp):
+        f = FALL_END + i
+        sx = a if i % 2 == 0 else -a * 0.8
+        sz = -a * 0.55 if i % 2 == 0 else a * 0.4
+        rig.location = (sx, 0, sz)
+        rig.keyframe_insert("location", frame=f)
+    rig.location = (0, 0, 0)
+    rig.keyframe_insert("location", frame=FALL_END + len(amp) + 1)
+    return rig
 
 
 def render_stage(n, out_dir):
@@ -379,7 +417,7 @@ def render_stage(n, out_dir):
         else:
             ob.location = (cx, 0, lifts[i])
             ob.keyframe_insert("location", frame=1)
-            animate_fall(ob, lifts[i])
+            animate_fall(ob, lifts[i], cx)
             ob.location = (cx, 0, lifts[i])
             ob.keyframe_insert("location", frame=TOTAL)
             make_crack_plane(cx, FALL_END)
