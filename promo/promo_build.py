@@ -209,7 +209,7 @@ def _atempo_chain(speed: float) -> str:
 
 
 CACHE_DIR = HERE / "segcache"
-CACHE_TAG = "crf20-veryfast"     # bump when the encoder settings below change
+CACHE_TAG = "crf20-veryfast-g3"  # g3: glitch lengthened 4->8 frames, shift 10->16
 
 
 def stinger_seconds() -> float:
@@ -269,68 +269,97 @@ def cache_put(key: str, produced: Path) -> None:
         shutil.copy2(produced, dst)
 
 
+def _run(cmd: list, timeout: int = 1800) -> bool:
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    if r.returncode != 0:
+        print(f"    ffmpeg: {(r.stderr or '').strip()[:220]}")
+    return r.returncode == 0
+
+
 def extract(src: Path, start: float, length: float, out: Path,
             glitch: bool = False, heavy: bool = False,
             speed: float = 1.0, src_len: float | None = None) -> bool:
-    """One cut, normalised to the output frame.
+    """One cut, normalised to the output frame, with optional glitch and retime.
 
     Output seeking (-i before -ss) is exact; input seeking lands on the previous
     keyframe and holds it, which shows as a freeze at the head of every cut.
 
-    Retimed cuts use TWO passes. Combining the seek with setpts gave 3.75s for a
-    source range that should compress to 3.00s - the seek and the retime fight
-    over timestamps. Cutting at 1x first and retiming the clean intermediate
-    reproduces exactly 3.00s.
+    Glitch and retime are BOTH two-pass, for the same reason: an output seek keeps
+    the filtergraph seeing source timestamps, so a frame-index trim or a timeline
+    guard inside the graph does not line up with the segment. Cutting plainly
+    first gives a clean intermediate that starts at zero.
     """
     base_vf = (f"scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"
                f"crop={OUT_W}:{OUT_H},fps={OUT_FPS},setsar=1")
-    vf = base_vf
-    if glitch:
-        shift = 18 if heavy else 9
-        vf += f",rgbashift=rh={shift}:bh=-{shift}:edge=wrap:enable='lt(t,0.07)'"
-        if heavy:
-            vf += ",pixelize=w=48:h=27:enable='lt(t,0.05)'"
-
     consume = length if src_len is None else src_len
     retime = abs(speed - 1.0) > 1e-6
+    do_glitch = bool(glitch or heavy)
 
-    if retime:
-        raw = out.with_name(out.stem + "_raw" + out.suffix)
-        r1 = subprocess.run([
-            FFMPEG, "-v", "error", "-y",
-            "-i", str(src),
-            "-ss", f"{max(0.0, start):.3f}", "-t", f"{max(0.1, consume):.3f}",
-            "-vf", base_vf,
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "16",
-            "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
-            "-movflags", "+faststart", str(raw),
-        ], capture_output=True, text=True, timeout=1800)
-        if r1.returncode != 0 or not raw.is_file():
-            return False
-        r2 = subprocess.run([
-            FFMPEG, "-v", "error", "-y", "-i", str(raw),
-            "-vf", f"setpts=PTS/{speed:.6f},fps={OUT_FPS},setsar=1",
-            "-af", _atempo_chain(speed),
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-            "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
-            "-movflags", "+faststart", str(out),
-        ], capture_output=True, text=True, timeout=1800)
-        try:
-            raw.unlink()
-        except OSError:
-            pass
-        return r2.returncode == 0 and out.is_file() and out.stat().st_size > 2048
+    enc_v = ["-c:v", "libx264", "-preset", "veryfast"]
+    enc_a = ["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]
 
-    r = subprocess.run([
-        FFMPEG, "-v", "error", "-y",
-        "-i", str(src),
-        "-ss", f"{max(0.0, start):.3f}", "-t", f"{max(0.1, consume):.3f}",
-        "-vf", vf,
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-        "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
-        "-movflags", "+faststart", str(out),
-    ], capture_output=True, text=True, timeout=1800)
-    return r.returncode == 0 and out.is_file() and out.stat().st_size > 2048
+    if not do_glitch and not retime:
+        return _run([FFMPEG, "-v", "error", "-y",
+                     "-i", str(src),
+                     "-ss", f"{max(0.0, start):.3f}", "-t", f"{max(0.1, consume):.3f}",
+                     "-vf", base_vf, *enc_v, "-crf", "20", *enc_a,
+                     "-movflags", "+faststart", str(out)]) and out.is_file()
+
+    # ---- pass 1: a clean cut, generous quality so pass 2 does not stack loss
+    raw = out.with_name(out.stem + "_raw" + out.suffix)
+    ok = _run([FFMPEG, "-v", "error", "-y",
+               "-i", str(src),
+               "-ss", f"{max(0.0, start):.3f}", "-t", f"{max(0.1, consume):.3f}",
+               "-vf", base_vf, *enc_v, "-crf", "14", *enc_a,
+               "-movflags", "+faststart", str(raw)])
+    if not ok or not raw.is_file():
+        return False
+
+    cur = raw
+    try:
+        # ---- pass 2a: glitch the first frames
+        if do_glitch:
+            shift = 26 if heavy else 16
+            head_n = 6 if heavy else 4
+            fx = f"rgbashift=rh={shift}:bh=-{shift}:edge=wrap"
+            if heavy:
+                fx += ",pixelize=w=48:h=27"
+            g_out = out.with_name(out.stem + "_g" + out.suffix)
+            fc = (f"[0:v]split=2[gh][gb];"
+                  f"[gh]trim=end_frame={head_n},setpts=PTS-STARTPTS,{fx}[g1];"
+                  f"[gb]trim=start_frame={head_n},setpts=PTS-STARTPTS[g2];"
+                  f"[g1][g2]concat=n=2:v=1:a=0[v]")
+            if not _run([FFMPEG, "-v", "error", "-y", "-i", str(cur),
+                         "-filter_complex", fc, "-map", "[v]", "-map", "0:a?",
+                         *enc_v, "-crf", "20", *enc_a,
+                         "-movflags", "+faststart", str(g_out)]):
+                return False
+            cur = g_out
+
+        # ---- pass 2b: retime (pins only)
+        if retime:
+            r_out = out if cur == raw else out
+            if not _run([FFMPEG, "-v", "error", "-y", "-i", str(cur),
+                         "-vf", f"setpts=PTS/{speed:.6f},fps={OUT_FPS},setsar=1",
+                         "-af", _atempo_chain(speed),
+                         *enc_v, "-crf", "20", *enc_a,
+                         "-movflags", "+faststart", str(r_out)]):
+                return False
+        else:
+            # move the finished file into place
+            if cur != out:
+                if out.exists():
+                    out.unlink()
+                os.replace(cur, out)
+
+        return out.is_file() and out.stat().st_size > 2048
+    finally:
+        for tmp in (raw, out.with_name(out.stem + "_g" + out.suffix)):
+            if tmp != out and tmp.exists():
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
 
 
 # server-side padding: the API builds windows as [moment - 5, moment + 3]
@@ -672,12 +701,15 @@ def build(args) -> int:
         [d for d in ("D", "DI", "DIK", "DIKG", "DIKGU", "DIKGUN")
          if (Path(STING) / d).is_dir()])
     if stinger_count:
-        _n = 0
-        for _i, _sh in enumerate(shots):
-            if (_sh["mode"] == "kill" and _i % flash_every == 0 and _i > 0
-                    and _n < stinger_count):
-                accent_before.add(_i)
-                _n += 1
+        # The letters spell the name once. Place them in the LAST stretch of the
+        # cut rather than spreading them through it: spreading put a full DIKGUN
+        # early, then the outro spelled it again, so a 2 minute video read the
+        # name twice. Taking the last N eligible cuts builds the word once,
+        # leading into the outro.
+        eligible = [_i for _i, _sh in enumerate(shots)
+                    if _sh["mode"] == "kill" and _i > 0]
+        chosen = eligible[-stinger_count:] if len(eligible) > stinger_count else eligible
+        accent_before.update(chosen)
 
     stinger_secs = stinger_seconds() if accent_before else 0.0
     if getattr(args, "from_edl", "") or "":
@@ -698,8 +730,32 @@ def build(args) -> int:
                 take = min(carry, max(0.0, _sh["len"] - 0.40))
                 _sh["len"] -= take
                 carry -= take
+        # With the letters clustered at the very end there are not enough shots
+        # after them to absorb the stinger time, which left the cut 0.96s long and
+        # clipped the outro's fade. Sweep backwards through the remaining shots.
+        if carry > 0.05:
+            for _sh in reversed(shots):
+                if carry <= 0.05:
+                    break
+                if _sh.get("mode") == "pin":
+                    continue
+                take = min(carry, max(0.0, _sh["len"] - 0.40))
+                _sh["len"] -= take
+                carry -= take
         if carry > 0.05:
             print(f"  warning: {carry:.2f}s of stinger time could not be absorbed")
+
+        # The 0.40s floors keep the sweep from absorbing everything, which left
+        # the cut a fraction short and cut the outro's final frames. Reconcile
+        # against the true expected total: shots + stingers must equal gameplay.
+        expected = sum(_sh["len"] for _sh in shots) + len(accent_before) * stinger_secs_used
+        diff = expected - gameplay
+        if abs(diff) > 0.02:
+            for _sh in reversed(shots):
+                if _sh.get("mode") != "pin":
+                    _sh["len"] = max(0.30, _sh["len"] - diff)
+                    break
+            print(f"  reconciled by {-diff:+.2f}s so shots + stingers = {gameplay:.2f}s")
 
     # ---- render from a hand-edited EDL instead of re-planning.
     # This is the modular path: change one shot in the JSON and only that
@@ -830,7 +886,9 @@ def build(args) -> int:
         if not src:
             continue
         out = segdir / f"seg_{i:03d}.mp4"
-        glitch = (s["mode"] == "kill")
+        # two thirds of kills, so the effect stays an accent rather than a
+        # every-single-cut tic
+        glitch = (s["mode"] == "kill" and (i % 3) != 2)
         heavy = bool(s.get("heavy"))
         speed = float(s.get("speed", 1.0))
         src_len = s.get("src_len")
