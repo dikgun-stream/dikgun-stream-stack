@@ -3,53 +3,56 @@
 Builds a ~1 minute channel promo from the clip library plus a music track.
 
 ```powershell
-python promo_build.py --music song.mp3 --duration 60 --dry-run
-python promo_build.py --music song.mp3 --duration 60 --games "Rainbow Six Siege,Deadlock,Apex Legends" --out promo.mp4
+python render_stingers.py                        # the DIKGUN cards
+python promo_build.py --music song.mp3 --duration 90 --dry-run
+python promo_build.py --music song.mp3 --duration 90 `
+  --games "Rainbow Six Siege,Deadlock,Apex Legends,Battlefield 6,The Finals" `
+  --prefer "Battlefield 6" --out promo.mp4
 ```
 
-`--dry-run` prints the planned cut list without rendering, which is the fast way
-to sanity-check the pacing before spending time on an encode.
+## Letter stingers
 
-Measured on this machine: 22 cuts over 60s renders in about 18 seconds.
+`render_stingers.py` draws six flat 2D cards with PIL - the accumulated word,
+adding one letter per stage:
 
-## How it decides
+```
+D    DI    DIK    DIKG    DIKGU    DIKGUN
+```
 
-1. Analyse the track - onsets, low-band kicks, short-window RMS envelope.
-2. Smooth the loud/quiet split over ~1.5s so a drop is a continuous section
-   rather than a flicker.
-3. **Build-up** = quiet sections. One sustained take per section, 5s from a
-   single recording, NOT beat-synced. The brief is "regular gameplay", so it is
-   deliberately not cut to the grid.
-4. **Drops** = loud sections. One kill per beat, cut to the coarsened onset grid.
-5. Game audio is kept at -18 dB under the music, because shots and footsteps
-   still need to be there.
+Colours follow the brand: DIK in cream `#ECE4D2`, GUN in red `#C8161D`. Each card
+is 0.70s at 60fps (about one beat at 120bpm), and `promo_build.py` splices them in
+as accents, encoding a silent audio track so they cannot desync the music.
 
-## Why the grid is coarsened
+Why flat 2D and not 3D:
 
-Analysis of the two existing edits (`analyse.py`) measured:
+* the 3D version had letters sunk into a ground plane, then a camera framing bug
+  that dropped every falling letter through the centre of the word, then a crack
+  mask calibrated to the wrong range of the displacement map
+* a flat card has no ground, no camera and no perspective, so none of that can
+  happen - and every stage shares one baseline, verified at top=414 / bottom=628
 
-| edit | length | cuts | median shot | tempo | cuts within 80ms of an onset | of a kick |
-|---|---|---|---|---|---|---|
-| Montage? | 223s | 46 | 1.30s | 129 BPM | **60.9%** | 34.8% |
-| yeah right | 174s | 28 | 1.73s | 115 BPM | **57.1%** | 21.4% |
+Layout is **left-aligned at x=193 with a constant font size**, so earlier letters
+never move when a new one appears. Centring the group each stage shifts every
+previous letter by half a glyph, which reads as misalignment when the cards are
+intercut with gameplay.
 
-Cuts land on musical onsets far more often than on kicks specifically, and the
-raw onset rate is ~3/second. Cutting on every onset would strobe at 300ms. The
-grid is therefore floored at 0.85s, which puts the median shot near the 1.3-1.7s
-actually measured.
+## Timing
+
+A stinger occupies video time the music does not wait for, so `promo_build.py`
+subtracts its duration from the following shots (carrying the remainder forward,
+because one 0.7s stinger cannot be absorbed by a 0.7s shot). Without this the cut
+drifted +7.68s over 90s; it is now -0.06s.
 
 ## Requirements
 
 - ffmpeg and ffprobe on PATH
 - The overlay server running (kill windows come from `/api/clips/highlights`)
-- numpy
+- numpy, opencv-python, pillow
 - A music file. **Not** a streaming URL - a file you hold.
 
 ## Known limits
 
 - Kill detection exists for R6, Deadlock, Battlefield 6, Apex and The Finals.
   Tarkov has none.
-- The generator has no idea whether a shot *looks* good; it trusts the kill
-  index. Anything the scanners missed cannot be chosen.
-- Output is 1080p60 at CRF 20, roughly 150 MB per minute. Raise the CRF in
-  `extract()` for a smaller file.
+- The generator cannot tell whether a shot *looks* good; it trusts the kill index.
+- Output is 1080p60 at CRF 20, roughly 200 MB per 90 seconds.
