@@ -28,6 +28,9 @@ param(
     [string]$Prefer = "",
     [string]$Pin = "",
     [ValidateSet('promo', 'edit')][string]$Mode = 'promo',
+    [string]$SaveEdl = "",
+    [string]$FromEdl = "",
+    [switch]$NoCache,
     [switch]$DryRun
 )
 
@@ -36,6 +39,19 @@ $here = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $python = Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'
 if (-not (Test-Path $python)) { $python = (Get-Command python -ErrorAction SilentlyContinue).Source }
 if (-not $python) { throw "python not found" }
+
+# resolve relative paths against the script directory too, so the command works
+# from any working directory
+function Resolve-Arg([string]$p) {
+    if ([string]::IsNullOrWhiteSpace($p)) { return $p }
+    if (Test-Path $p) { return $p }
+    $alt = Join-Path $here $p
+    if (Test-Path $alt) { return $alt }
+    return $p
+}
+$Music  = Resolve-Arg $Music
+$Outro  = Resolve-Arg $Outro
+$FromEdl = Resolve-Arg $FromEdl
 
 if (-not (Test-Path $Music)) { throw "music not found: $Music" }
 
@@ -74,6 +90,10 @@ if ($Outro) {
     if (-not (Test-Path $Outro)) { throw "outro not found: $Outro" }
     $args += @('--outro', $Outro)
 }
+if ($FromEdl -and -not (Test-Path $FromEdl)) { throw "EDL not found: $FromEdl" }
+if ($SaveEdl) { $args += @('--save-edl', $SaveEdl) }
+if ($FromEdl) { $args += @('--from-edl', $FromEdl) }
+if ($NoCache) { $args += '--no-cache' }
 if ($DryRun) { $args += '--dry-run' }
 
 Write-Host ""

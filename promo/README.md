@@ -172,3 +172,5 @@ segment** and finished in **18 seconds**, against ~5 minutes for a full rebuild.
 The EDL is written *after* the stinger time compensation, so it is the final
 design - loading it applies no further trimming. `--no-cache` forces a full
 re-encode when you suspect a stale entry.
+
+See **CHEATSHEET.md** for the command syntax - it is the short version of this file.
