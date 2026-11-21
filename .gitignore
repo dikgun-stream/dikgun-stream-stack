@@ -58,3 +58,8 @@ promo/cracked_*.jpg
 # generated outro frames and the encoded clip
 promo/outro_frames/
 promo/outro.mp4
+
+# generated from the brand avatar by promo/make_mark.py
+promo/mark_rgba.png
+promo/mark_left.png
+promo/mark_right.png

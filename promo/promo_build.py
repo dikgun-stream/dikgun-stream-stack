@@ -182,6 +182,9 @@ ROOTS = {
 
 
 def resolve(clip: dict) -> Path | None:
+    if clip.get("path"):
+        p = Path(clip["path"])
+        return p if p.is_file() else None
     root = ROOTS.get(clip.get("mount") or "videos")
     if not root:
         return None
@@ -190,33 +193,81 @@ def resolve(clip: dict) -> Path | None:
 
 
 # --------------------------------------------------------------------- build
-def extract(src: Path, start: float, length: float, out: Path,
-            glitch: bool = False, heavy: bool = False) -> bool:
-    """One cut, normalised to the output frame so concat cannot drift.
+def _atempo_chain(speed: float) -> str:
+    """atempo accepts 0.5-2.0 per instance, so extreme ratios are chained."""
+    parts = []
+    v = float(speed)
+    while v > 2.0:
+        parts.append(2.0)
+        v /= 2.0
+    while v < 0.5:
+        parts.append(0.5)
+        v /= 0.5
+    parts.append(v)
+    return ",".join(f"atempo={p:.4f}" for p in parts)
 
-    Output seeking (-i first) is slower than input seeking but exact. Input
-    seeking lands on the preceding keyframe and holds it, which is the visible
-    freeze at the start of every cut.
+
+def extract(src: Path, start: float, length: float, out: Path,
+            glitch: bool = False, heavy: bool = False,
+            speed: float = 1.0, src_len: float | None = None) -> bool:
+    """One cut, normalised to the output frame.
+
+    Output seeking (-i before -ss) is exact; input seeking lands on the previous
+    keyframe and holds it, which shows as a freeze at the head of every cut.
+
+    Retimed cuts use TWO passes. Combining the seek with setpts gave 3.75s for a
+    source range that should compress to 3.00s - the seek and the retime fight
+    over timestamps. Cutting at 1x first and retiming the clean intermediate
+    reproduces exactly 3.00s.
     """
-    vf = (f"scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"
-          f"crop={OUT_W}:{OUT_H},fps={OUT_FPS},setsar=1")
+    base_vf = (f"scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"
+               f"crop={OUT_W}:{OUT_H},fps={OUT_FPS},setsar=1")
+    vf = base_vf
     if glitch:
-        # channels separate then snap back. False drops get a wider shift and a
-        # short pixelate, so the accent is visibly different from the main drop.
         shift = 18 if heavy else 9
         vf += f",rgbashift=rh={shift}:bh=-{shift}:edge=wrap:enable='lt(t,0.07)'"
         if heavy:
             vf += ",pixelize=w=48:h=27:enable='lt(t,0.05)'"
-    cmd = [
+
+    consume = length if src_len is None else src_len
+    retime = abs(speed - 1.0) > 1e-6
+
+    if retime:
+        raw = out.with_name(out.stem + "_raw" + out.suffix)
+        r1 = subprocess.run([
+            FFMPEG, "-v", "error", "-y",
+            "-i", str(src),
+            "-ss", f"{max(0.0, start):.3f}", "-t", f"{max(0.1, consume):.3f}",
+            "-vf", base_vf,
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "16",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+            "-movflags", "+faststart", str(raw),
+        ], capture_output=True, text=True, timeout=1800)
+        if r1.returncode != 0 or not raw.is_file():
+            return False
+        r2 = subprocess.run([
+            FFMPEG, "-v", "error", "-y", "-i", str(raw),
+            "-vf", f"setpts=PTS/{speed:.6f},fps={OUT_FPS},setsar=1",
+            "-af", _atempo_chain(speed),
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+            "-movflags", "+faststart", str(out),
+        ], capture_output=True, text=True, timeout=1800)
+        try:
+            raw.unlink()
+        except OSError:
+            pass
+        return r2.returncode == 0 and out.is_file() and out.stat().st_size > 2048
+
+    r = subprocess.run([
         FFMPEG, "-v", "error", "-y",
         "-i", str(src),
-        "-ss", f"{max(0.0, start):.3f}", "-t", f"{max(0.1, length):.3f}",
+        "-ss", f"{max(0.0, start):.3f}", "-t", f"{max(0.1, consume):.3f}",
         "-vf", vf,
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
         "-movflags", "+faststart", str(out),
-    ]
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+    ], capture_output=True, text=True, timeout=1800)
     return r.returncode == 0 and out.is_file() and out.stat().st_size > 2048
 
 
@@ -423,6 +474,75 @@ def plan(music: dict, kills: list[dict], t0: float, duration: float,
     return shots
 
 
+def apply_pin(shots: list[dict], path: str, src_start: float, src_end: float,
+              at: float, length: float | None = None,
+              at_label: float | None = None) -> tuple[list[dict], dict | None]:
+    """Force a source range into an exact time window.
+
+    Boundary shots are trimmed rather than swallowed, so the window can be any
+    length (the Cobra manoeuvre is 7s of source squeezed into a 3s slot). Totals
+    are preserved, so nothing after the pin shifts.
+    """
+    if length is None or length <= 0.05:
+        # fall back: take the shot that starts at/after `at`
+        idx = next((i for i, sh in enumerate(shots) if sh["at"] >= at - 1e-6), None)
+        if idx is None:
+            print(f"  pin: nothing at or after {at:.2f}s - ignored")
+            return shots, None
+        length = shots[idx]["len"]
+
+    win_end = at + length
+    src_span = max(0.1, src_end - src_start)
+    pin = {
+        "clip": {"path": path, "game": "Battlefield 6"},
+        "start": src_start, "src_len": src_span, "len": length,
+        "mode": "pin", "speed": src_span / length, "at": at,
+    }
+
+    out: list[dict] = []
+    placed = False
+    for sh in shots:
+        a, b = sh["at"], sh["at"] + sh["len"]
+        if b <= at + 1e-6:
+            out.append(sh)
+            continue
+        if a >= win_end - 1e-6:
+            if not placed:
+                out.append(pin)
+                placed = True
+            out.append(sh)
+            continue
+
+        if not placed and a < at - 1e-6:
+            head = dict(sh)
+            head["len"] = at - a
+            if head["len"] > 0.05:
+                out.append(head)
+        if not placed:
+            out.append(pin)
+            placed = True
+        if b > win_end + 1e-6:
+            tail = dict(sh)
+            consumed = win_end - a
+            tail["start"] = sh["start"] + consumed
+            tail["len"] = b - win_end
+            if tail["len"] > 0.05:
+                out.append(tail)
+
+    if not placed:
+        out.append(pin)
+
+    t = out[0]["at"]
+    for sh in out:
+        sh["at"] = round(t, 2)
+        t += sh["len"]
+
+    shown = at if at_label is None else at_label
+    print(f"  pin '{os.path.basename(path)}' {src_start:.1f}-{src_end:.1f}s "
+          f"-> {length:.2f}s at video {shown:.2f}s ({src_span / length:.2f}x)")
+    return out, pin
+
+
 def build(args) -> int:
     music_path = Path(args.music)
     if not music_path.is_file():
@@ -465,9 +585,25 @@ def build(args) -> int:
     print(f"  planned {len(shots)} cuts over {duration:.1f}s "
           f"({loud_n} on drops, {len(shots) - loud_n} build-up)")
 
+    for spec in (getattr(args, "pin", "") or "").split(";"):
+        spec = spec.strip()
+        if not spec:
+            continue
+        try:
+            parts = [v.strip() for v in spec.split("|")]
+            path, s0, s1 = parts[0], float(parts[1]), float(parts[2])
+            at_video = float(parts[3])
+            ln = float(parts[4]) if len(parts) > 4 else None
+            # shots are keyed on MUSIC time; the user thinks in video seconds
+            shots, _ = apply_pin(shots, path, s0, s1, at_video + t0, ln,
+                                 at_label=at_video)
+        except (ValueError, IndexError):
+            print(f"  pin ignored, need PATH|src_start|src_end|at|len : {spec}")
+
     if args.dry_run:
+        print(f"  (times below are seconds into the finished video; t0={t0:.1f})")
         for s in shots[:25]:
-            print(f"    {s['at']:6.2f}s  {s['mode']:5}  {s['clip']['game']:22} "
+            print(f"    {s['at'] - t0:6.2f}s  {s['mode']:5}  {s['clip']['game']:22} "
                   f"{s['start']:8.1f} +{s['len']:.2f}")
         return 0
 
@@ -568,12 +704,16 @@ def build(args) -> int:
         for _i, _s in enumerate(shots):
             if _i in accent_before:
                 carry += stinger_secs
-            if carry > 0.0:
+            # A pinned shot's real duration is src_len/speed, NOT `len`. Trimming
+            # its `len` shortened the plan without shortening the encode, which
+            # left the cut 0.70s long and cut the outro's fade to black.
+            if carry > 0.0 and _s.get("mode") != "pin":
                 take = min(carry, max(0.0, _s["len"] - 0.40))
                 _s["len"] -= take
                 carry -= take
         if carry > 0.05:
             print(f"  warning: {carry:.2f}s of stinger time could not be absorbed")
+
 
     made: list = []
     for i, s in enumerate(shots):
@@ -583,7 +723,9 @@ def build(args) -> int:
         out = segdir / f"seg_{i:03d}.mp4"
         if extract(src, s["start"], s["len"], out,
                    glitch=(s["mode"] == "kill"),
-                   heavy=bool(s.get("heavy"))):
+                   heavy=bool(s.get("heavy")),
+                   speed=float(s.get("speed", 1.0)),
+                   src_len=s.get("src_len")):
             made.append(out)
         else:
             print(f"    cut {i} failed ({s['clip']['game']})")
@@ -672,6 +814,8 @@ def main() -> int:
                     help="seconds into the track to begin at")
     ap.add_argument("--outro", default="", help="mp4 to append as the outro; "
                     "gameplay is shortened to make room for it")
+    ap.add_argument("--pin", default="", help="force a source range into a window: "
+                    "PATH|src_start|src_end|at|len, semicolon-separated for several")
     ap.add_argument("--prefer", default="",
                     help="comma list of games to favour on drop cuts")
     ap.add_argument("--dry-run", action="store_true")
