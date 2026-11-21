@@ -205,48 +205,59 @@ def extract(src: Path, start: float, length: float, out: Path) -> bool:
     return r.returncode == 0 and out.is_file() and out.stat().st_size > 2048
 
 
-def plan(music: dict, kills: list[dict], t0: float, duration: float) -> list[dict]:
-    """Decide, section by section, whether to show sustained play or a kill cut.
+# server-side padding: the API builds windows as [moment - 5, moment + 3]
+PAD_BEFORE = 5.0
+KILL_LEAD = 0.45      # start this far before the kill
+KILL_TAIL = 1.55      # and hold this long, so the kill and its result are shown
 
-    Build-up must read as regular gameplay, so it is NOT beat-synced: one long
-    take per section, 4-7s from a single recording. Drops are beat-synced, but on
-    a coarsened grid - the raw onset rate here is ~3 per second, which would cut
-    every 300ms and strobe.
 
-    The target is the shot length actually measured in the two existing edits:
-    median 1.3s and 1.7s.
-    """
+def plan(music: dict, kills: list[dict], t0: float, duration: float,
+         prefer: list[str] | None = None) -> list[dict]:
+    """Decide, section by section, whether to show sustained play or a kill cut."""
     hops = music["hop_times"]
     onsets = music["onsets"]
 
-    # Majority-vote the loud/quiet flag over ~1.5s. The raw per-hop envelope
-    # flickers, which scattered single kill cuts through the build-up instead of
-    # producing sustained drops.
+    # majority-vote the loud/quiet flag over ~1.5s so a drop is a section
     raw_loud = np.asarray(music["loud"], bool)
     span = max(3, int(1.5 * SR / HOP))
     if len(raw_loud) > span:
         kern = np.ones(span, np.float32) / span
-        frac = np.convolve(raw_loud.astype(np.float32), kern, mode="same")
-        loud = frac > 0.5
+        loud = np.convolve(raw_loud.astype(np.float32), kern, mode="same") > 0.5
     else:
         loud = raw_loud
 
-    # coarsen the cut grid so the median shot lands near the measured 1.3-1.7s
+    t_end = t0 + duration
+
+    # first sustained loud run after t0 = where the drop lands
+    first_drop = None
+    run = 0
+    for i, v in enumerate(loud):
+        if hops[i] < t0:
+            continue
+        if v:
+            run += 1
+            if run >= 4:
+                first_drop = float(hops[max(0, i - run + 1)])
+                break
+        else:
+            run = 0
+    if first_drop is None or first_drop <= t0 + 1.0:
+        first_drop = t0 + duration * 0.55
+    first_drop = min(first_drop, t_end - 1.0)
+
+    # cut grid, floored so the median shot stays near the measured 1.3-1.7s
     MIN_SHOT = 0.85
-    grid = []
-    last = -99.0
+    grid, last = [], -99.0
     for t in onsets:
         if t - last >= MIN_SHOT:
             grid.append(float(t))
             last = float(t)
     if not grid:
-        grid = [float(t) for t in np.arange(0.0, duration, 1.2)]
-    t_end = t0 + duration
+        grid = [float(t) for t in np.arange(t0, t_end, 1.2)]
     grid = [t for t in grid if t0 <= t < t_end]
 
     def is_loud(t: float) -> bool:
-        i = int(np.searchsorted(hops, t))
-        i = min(max(i, 0), len(loud) - 1)
+        i = min(max(int(np.searchsorted(hops, t)), 0), len(loud) - 1)
         return bool(loud[i])
 
     def next_grid(t: float) -> float:
@@ -255,34 +266,88 @@ def plan(music: dict, kills: list[dict], t0: float, duration: float) -> list[dic
                 return g
         return t_end
 
+    # game-aware picker: avoid cutting from the same game twice in a row
+    by_game: dict[str, list[dict]] = {}
+    for c in kills:
+        by_game.setdefault(c["game"], []).append(c)
+    game_names = list(by_game)
+    idx = {g: 0 for g in game_names}
+    state = {"last": None}
+
+    def pick() -> dict:
+        order = game_names
+        if len(order) > 1 and state["last"] in order:
+            # rotate so the previous game is considered last
+            i = order.index(state["last"])
+            order = order[i + 1:] + order[:i]
+        for g in order:
+            pool = by_game[g]
+            c = pool[idx[g] % len(pool)]
+            idx[g] += 1
+            state["last"] = g
+            return c
+        return kills[0]
+
+    # drop-time preference: some games are simply better on a beat. Jets in
+    # Battlefield are the obvious one, so those clips get first refusal on every
+    # drop cut and the rotation only falls through to the others when exhausted.
+    prefer_pools = []
+    for g in (prefer or []):
+        for name, pool in by_game.items():
+            if g.lower() in name.lower():
+                prefer_pools.append((name, pool))
+    pidx = {"n": 0}
+    last_used = {"clip": None}
+
+    def pick_drop() -> dict:
+        # Alternate: preferred game, then the normal rotation. Taking every drop
+        # cut from the preferred pool made 24 consecutive jet cuts, which is
+        # monotonous; the point is for them to LEAD the drop, not own it.
+        if prefer_pools:
+            if pidx["n"] % 2 == 0:
+                k = pidx["n"] // 2
+                name, pool = prefer_pools[k % len(prefer_pools)]
+                c = pool[(k // max(1, len(prefer_pools))) % len(pool)]
+                pidx["n"] += 1
+                state["last"] = name
+                return c
+            pidx["n"] += 1
+        return pick()
+
     shots: list[dict] = []
-    ki = 0
     t = t0
-    BUILD_TAKE = 5.0        # seconds of uninterrupted play per build-up section
-    KILL_TAKE = 1.6         # longest a single kill cut may run
+    BUILD_START, BUILD_END = 4.6, 1.9   # shot length at the start vs at the drop
 
     while t < t_end - 0.25:
-        clip = kills[ki % len(kills)]
-        ki += 1
+        is_drop = (t >= first_drop) or is_loud(t)
+        clip = pick_drop() if is_drop else pick()
         remaining = t_end - t
+        span = max(0.8, clip["end"] - clip["start"])
 
-        if is_loud(t):
-            # drop: cut on the grid, hold long enough to read the kill
-            seg_end = min(next_grid(t), t + KILL_TAKE)
-            seg_len = max(0.55, min(seg_end - t, remaining))
-            span = max(0.6, clip["end"] - clip["start"])
-            shots.append({"clip": clip, "start": clip["start"],
-                          "len": min(seg_len, span), "mode": "kill",
-                          "at": round(t, 2)})
+        if is_drop:
+            # ---- drop: the kill must be ON screen, straddled by the cut
+            kill_at = clip["start"] + PAD_BEFORE
+            take_start = max(clip["start"], kill_at - KILL_LEAD)
+            seg_end = min(next_grid(t), t + KILL_TAIL)
+            seg_len = max(0.7, min(seg_end - t, KILL_TAIL, remaining))
+            shots.append({"clip": clip, "start": take_start,
+                          "len": max(0.7, min(seg_len, span)),
+                          "mode": "kill", "at": round(t, 2)})
         else:
-            # build-up: one sustained take, ignoring the beat grid entirely
-            seg_len = max(2.0, min(BUILD_TAKE, remaining))
-            span = clip["end"] - clip["start"]
-            take = min(seg_len, max(2.0, span))
-            start_at = clip["start"] + max(0.0, (span - take) * 0.25)
+            # ---- build: progressively busier as the drop approaches
+            p = (t - t0) / max(0.5, first_drop - t0)
+            want = BUILD_START + (BUILD_END - BUILD_START) * min(1.0, p)
+            # deliberately NOT snapped to the onset grid: only the drops are
+            # beat-synced. Clamping to next_grid here locked the build to ~1s,
+            # which made the quiet half as busy as the drop.
+            seg_len = max(0.7, min(want, remaining))
+            take = min(seg_len, span)
+            # take from the run-up to the kill, not the padded tail
+            start_at = clip["start"] + max(0.0, (span - take) * 0.45)
             shots.append({"clip": clip, "start": start_at, "len": take,
                           "mode": "play", "at": round(t, 2)})
         t += seg_len
+
     return shots
 
 
@@ -304,7 +369,8 @@ def build(args) -> int:
 
     t0 = max(0.0, min(args.start, music["duration"] - 1.0))
     duration = min(args.duration, music["duration"] - t0)
-    shots = plan(music, kills, t0, duration)
+    prefer = [g.strip() for g in (args.prefer or "").split(",") if g.strip()]
+    shots = plan(music, kills, t0, duration, prefer)
     loud_n = sum(1 for s in shots if s["mode"] == "kill")
     print(f"  planned {len(shots)} cuts over {duration:.1f}s "
           f"({loud_n} on drops, {len(shots) - loud_n} build-up)")
@@ -375,6 +441,8 @@ def main() -> int:
     ap.add_argument("--duration", type=float, default=60.0)
     ap.add_argument("--start", type=float, default=0.0,
                     help="seconds into the track to begin at")
+    ap.add_argument("--prefer", default="",
+                    help="comma list of games to favour on drop cuts")
     ap.add_argument("--dry-run", action="store_true")
     return build(ap.parse_args())
 
