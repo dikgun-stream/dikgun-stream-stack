@@ -216,3 +216,32 @@ other moment - there is no special case downstream.
 - `-Start` is ignored (the assembled timeline starts at 0)
 - Add `-DryRun` first: the log prints each slice and its length, so you can see
   exactly where the songs meet before spending an encode
+
+---
+
+## Kill-on-beat validation
+
+Every build now verifies that each kill actually lands on a musical onset **in the
+rendered timeline** (not in the plan), and nudges boundaries to fix drift. It runs
+after the stinger compensation and before the EDL is written, so a saved EDL is
+already aligned.
+
+```
+kill sync: 48/48 kills within 40ms   median 6ms   worst 34ms   boundaries moved: 6
+```
+
+Repair works by sliding the boundary between a kill and the shot before it: the
+previous shot gives up `err` seconds and the kill takes them, so the **total
+duration is unchanged** and nothing downstream moves.
+
+| Flag | Effect |
+|---|---|
+| `--sync-tol 0.04` | how close counts as aligned (default 40ms) |
+| `--no-sync` | report only, change nothing |
+
+Measured: lengthening a clip by 0.30s mid-video leaves 45/48 kills within 40ms
+(worst 145ms); re-running with repair returns 48/48 (worst 26ms).
+
+If the line reports kills it could not move, the boundary is blocked - usually a
+pinned clip or a shot already at the 0.35s floor. Shift `--start` slightly instead,
+which moves the whole song grid.

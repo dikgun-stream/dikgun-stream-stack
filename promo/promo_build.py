@@ -712,6 +712,71 @@ def assemble_songs(spec: str, duration: float, out_path: Path) -> Path:
     return out_path
 
 
+SYNC_MIN_SHOT = 0.35      # a shot may not shrink below this
+SYNC_MAX_GROW = 0.45      # how much a kill may grow to absorb a nudge
+
+
+def actual_times(shots: list[dict], accent_before: set[int], stinger_secs: float) -> list[float]:
+    """True video start time of every shot, exactly as the concat will lay out."""
+    t = 0.0
+    out = []
+    for i, sh in enumerate(shots):
+        if i in accent_before and stinger_secs:
+            t += stinger_secs
+        out.append(t)
+        t += sh["len"]
+    return out
+
+
+def verify_kills(shots, starts, beats_video, tol) -> dict:
+    """Distance from each kill's real start to its nearest onset."""
+    errs = []
+    for i, sh in enumerate(shots):
+        if sh.get("mode") != "kill":
+            continue
+        t = starts[i]
+        near = min(beats_video, key=lambda b: abs(b - t)) if beats_video else t
+        errs.append((i, t, near, t - near))
+    if not errs:
+        return {"n": 0, "within": 0, "median": 0.0, "worst": 0.0, "errs": []}
+    mags = sorted(abs(e[3]) for e in errs)
+    median = mags[len(mags) // 2]
+    return {
+        "n": len(errs),
+        "within": sum(1 for m in mags if m <= tol),
+        "median": median,
+        "worst": mags[-1],
+        "errs": errs,
+    }
+
+
+def sync_kills(shots, accent_before, stinger_secs, beats_music, t0, tol,
+               repair=True, rounds=3):
+    """Nudge boundaries so kills sit on onsets. Returns the final report."""
+    beats_video = [b - t0 for b in beats_music]
+    moved = 0
+    for _ in range(rounds if repair else 1):
+        starts = actual_times(shots, accent_before, stinger_secs)
+        rep = verify_kills(shots, starts, beats_video, tol)
+        if not repair or rep["within"] == rep["n"]:
+            return rep, moved
+        for i, t, near, err in rep["errs"]:
+            if abs(err) <= tol or i == 0:
+                continue
+            prev, cur = shots[i - 1], shots[i]
+            if prev.get("mode") == "pin" or cur.get("mode") == "pin":
+                continue
+            # the previous shot gives up `err`, the kill takes it: total unchanged
+            give = max(-(prev["len"] - SYNC_MIN_SHOT), min(err, SYNC_MAX_GROW))
+            if abs(give) < 1e-4:
+                continue
+            prev["len"] = round(prev["len"] - give, 4)
+            cur["len"] = round(cur["len"] + give, 4)
+            moved += 1
+    starts = actual_times(shots, accent_before, stinger_secs)
+    return verify_kills(shots, starts, beats_video, tol), moved
+
+
 def build(args) -> int:
     songs = getattr(args, "songs", "") or ""
     if songs:
@@ -843,6 +908,24 @@ def build(args) -> int:
                     _sh["len"] = max(0.30, _sh["len"] - diff)
                     break
             print(f"  reconciled by {-diff:+.2f}s so shots + stingers = {gameplay:.2f}s")
+
+    # ---- verify kills against the REAL timeline and nudge boundaries to fix
+    # drift. Must run after compensation (which inserts the stinger time) and
+    # before the EDL is written, so a saved EDL is already aligned.
+    if accent_before or True:
+        tol = float(getattr(args, "sync_tol", 0.04))
+        rep, moved = sync_kills(
+            shots, accent_before, stinger_secs_used, music["onsets"], t0, tol,
+            repair=not bool(getattr(args, "no_sync", False)))
+        if rep["n"]:
+            print(f"  kill sync: {rep['within']}/{rep['n']} kills within "
+                  f"{int(tol*1000)}ms   median {rep['median']*1000:.0f}ms   "
+                  f"worst {rep['worst']*1000:.0f}ms   boundaries moved: {moved}")
+            if rep["within"] < rep["n"]:
+                worst = sorted(rep["errs"], key=lambda e: -abs(e[3]))[:3]
+                for i, t, near, err in worst:
+                    print(f"    shot {i:3d} at {t:6.2f}s is {err*1000:+.0f}ms off "
+                          f"(nearest onset {near:.2f}s) - cannot move further")
 
     # ---- render from a hand-edited EDL instead of re-planning.
     # This is the modular path: change one shot in the JSON and only that
@@ -1105,6 +1188,10 @@ def main() -> int:
                     help="write the planned cut to JSON for hand editing")
     ap.add_argument("--from-edl", default="",
                     help="render from a saved EDL instead of re-planning")
+    ap.add_argument("--sync-tol", type=float, default=0.04,
+                    help="how close a kill must land to an onset, seconds")
+    ap.add_argument("--no-sync", action="store_true",
+                    help="report kill alignment but do not nudge boundaries")
     ap.add_argument("--no-cache", action="store_true",
                     help="re-encode every segment, ignore the segment cache")
     ap.add_argument("--mode", choices=("promo", "edit"), default="promo",
