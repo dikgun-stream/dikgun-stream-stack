@@ -205,7 +205,7 @@ def extract(src: Path, start: float, length: float, out: Path) -> bool:
     return r.returncode == 0 and out.is_file() and out.stat().st_size > 2048
 
 
-def plan(music: dict, kills: list[dict], duration: float) -> list[dict]:
+def plan(music: dict, kills: list[dict], t0: float, duration: float) -> list[dict]:
     """Decide, section by section, whether to show sustained play or a kill cut.
 
     Build-up must read as regular gameplay, so it is NOT beat-synced: one long
@@ -241,7 +241,8 @@ def plan(music: dict, kills: list[dict], duration: float) -> list[dict]:
             last = float(t)
     if not grid:
         grid = [float(t) for t in np.arange(0.0, duration, 1.2)]
-    grid = [t for t in grid if t < duration]
+    t_end = t0 + duration
+    grid = [t for t in grid if t0 <= t < t_end]
 
     def is_loud(t: float) -> bool:
         i = int(np.searchsorted(hops, t))
@@ -252,18 +253,18 @@ def plan(music: dict, kills: list[dict], duration: float) -> list[dict]:
         for g in grid:
             if g > t + 0.05:
                 return g
-        return duration
+        return t_end
 
     shots: list[dict] = []
     ki = 0
-    t = 0.0
+    t = t0
     BUILD_TAKE = 5.0        # seconds of uninterrupted play per build-up section
     KILL_TAKE = 1.6         # longest a single kill cut may run
 
-    while t < duration - 0.25:
+    while t < t_end - 0.25:
         clip = kills[ki % len(kills)]
         ki += 1
-        remaining = duration - t
+        remaining = t_end - t
 
         if is_loud(t):
             # drop: cut on the grid, hold long enough to read the kill
@@ -301,8 +302,9 @@ def build(args) -> int:
         raise SystemExit("no kill windows resolve to real files")
     print(f"  kill windows available: {len(kills)}")
 
-    duration = min(args.duration, music["duration"])
-    shots = plan(music, kills, duration)
+    t0 = max(0.0, min(args.start, music["duration"] - 1.0))
+    duration = min(args.duration, music["duration"] - t0)
+    shots = plan(music, kills, t0, duration)
     loud_n = sum(1 for s in shots if s["mode"] == "kill")
     print(f"  planned {len(shots)} cuts over {duration:.1f}s "
           f"({loud_n} on drops, {len(shots) - loud_n} build-up)")
@@ -342,10 +344,15 @@ def build(args) -> int:
 
     out = Path(args.out)
     # music at full level, game audio attenuated under it
+    # The track is already mastered near full scale, so music + game audio summed
+    # straight together clipped (measured max_volume -0.0 dB). Pull the music down
+    # a touch and finish with a limiter so nothing touches the ceiling.
+    MUSIC_TRIM_DB = -3.0
     filt = (f"[0:a]volume={GAME_AUDIO_DB}dB[game];"
-            f"[1:a]atrim=0:{duration},volume=0dB[mus];"
+            f"[1:a]atrim={t0}:{t0 + duration},asetpts=PTS-STARTPTS,"
+            f"volume={MUSIC_TRIM_DB}dB[mus];"
             f"[game][mus]amix=inputs=2:duration=first:dropout_transition=0:"
-            f"weights=1 1[a]")
+            f"weights=1 1,alimiter=limit=0.95:level=false[a]")
     subprocess.run([
         FFMPEG, "-v", "error", "-y",
         "-i", str(silent), "-i", str(music_path),
@@ -366,6 +373,8 @@ def main() -> int:
     ap.add_argument("--out", default="promo.mp4")
     ap.add_argument("--games", default="", help="comma list; empty = every game with kills")
     ap.add_argument("--duration", type=float, default=60.0)
+    ap.add_argument("--start", type=float, default=0.0,
+                    help="seconds into the track to begin at")
     ap.add_argument("--dry-run", action="store_true")
     return build(ap.parse_args())
 
