@@ -189,14 +189,24 @@ def resolve(clip: dict) -> Path | None:
 
 
 # --------------------------------------------------------------------- build
-def extract(src: Path, start: float, length: float, out: Path) -> bool:
-    """One cut, normalised to the output frame so concat cannot drift."""
+def extract(src: Path, start: float, length: float, out: Path,
+            glitch: bool = False) -> bool:
+    """One cut, normalised to the output frame so concat cannot drift.
+
+    Output seeking (-i first) is slower than input seeking but exact. Input
+    seeking lands on the preceding keyframe and holds it, which is the visible
+    freeze at the start of every cut.
+    """
+    vf = (f"scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"
+          f"crop={OUT_W}:{OUT_H},fps={OUT_FPS},setsar=1")
+    if glitch:
+        # channels separate for the first ~70ms then snap back
+        vf += ",rgbashift=rh=9:bh=-9:edge=wrap:enable='lt(t,0.07)'"
     cmd = [
         FFMPEG, "-v", "error", "-y",
-        "-ss", f"{max(0.0, start):.3f}", "-t", f"{max(0.1, length):.3f}",
         "-i", str(src),
-        "-vf", (f"scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"
-                f"crop={OUT_W}:{OUT_H},fps={OUT_FPS},setsar=1"),
+        "-ss", f"{max(0.0, start):.3f}", "-t", f"{max(0.1, length):.3f}",
+        "-vf", vf,
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
         "-movflags", "+faststart", str(out),
@@ -386,13 +396,28 @@ def build(args) -> int:
     for old in segdir.glob("seg_*.mp4"):
         old.unlink()
 
-    made = []
+    # 2-frame colour accents, spliced into the concat list rather than rendered
+    # per occurrence - the concat demuxer happily lists the same file twice.
+    def make_flash(name: str, colour: str) -> Path:
+        p = segdir / name
+        subprocess.run([
+            FFMPEG, "-v", "error", "-y", "-f", "lavfi",
+            "-i", f"color=c={colour}:s={OUT_W}x{OUT_H}:d=0.034:r={OUT_FPS}",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(p)],
+            check=True, timeout=300)
+        return p
+
+    black = make_flash("flash_black.mp4", "black")
+    white = make_flash("flash_white.mp4", "white")
+
+    made: list = []
     for i, s in enumerate(shots):
         src = resolve(s["clip"])
         if not src:
             continue
         out = segdir / f"seg_{i:03d}.mp4"
-        if extract(src, s["start"], s["len"], out):
+        if extract(src, s["start"], s["len"], out, glitch=(s["mode"] == "kill")):
             made.append(out)
         else:
             print(f"    cut {i} failed ({s['clip']['game']})")
@@ -400,8 +425,25 @@ def build(args) -> int:
         raise SystemExit("no segments extracted")
     print(f"  extracted {len(made)} segments")
 
+    # Flash accents: one every ~6s on a drop cut, mostly black, occasional white.
+    # That cadence and ratio come from measuring the reference edits.
+    listing_lines = []
+    flash_every = 6
+    n_flash_b = n_flash_w = 0
+    for i, p in enumerate(made):
+        shot = shots[i] if i < len(shots) else None
+        if (shot and shot["mode"] == "kill" and i % flash_every == 0 and i > 0):
+            if (i // flash_every) % 4 == 3:
+                listing_lines.append(f"file '{white.name}'")
+                n_flash_w += 1
+            else:
+                listing_lines.append(f"file '{black.name}'")
+                n_flash_b += 1
+        listing_lines.append(f"file '{p.name}'")
+    print(f"  flash accents: {n_flash_b} black, {n_flash_w} white")
+
     listing = segdir / "list.txt"
-    listing.write_text("\n".join(f"file '{p.name}'" for p in made), encoding="utf-8")
+    listing.write_text("\n".join(listing_lines), encoding="utf-8")
 
     silent = segdir / "video.mp4"
     subprocess.run([FFMPEG, "-v", "error", "-y", "-f", "concat", "-safe", "0",
