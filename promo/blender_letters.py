@@ -36,7 +36,7 @@ CREAM = (0.925, 0.894, 0.824, 1.0)    # #ECE4D2
 
 FPS = 60
 FALL_END = 18          # frame the letter hits the ground
-TOTAL = 34             # ~0.57s at 60fps
+TOTAL = 66             # ~1.1s at 60fps - long enough to read the letter
 LETTERS = list("DIKGUN")
 
 
@@ -83,7 +83,7 @@ def make_letter(ch, colour):
     ob = bpy.context.object
     ob.name = f"Letter_{ch}"
     ob.data.body = ch
-    ob.data.size = 4.6
+    ob.data.size = 4.0
     ob.data.extrude = 0.42
     ob.data.bevel_depth = 0.055
     ob.data.bevel_resolution = 3
@@ -100,6 +100,13 @@ def make_letter(ch, colour):
         bsdf.inputs["Base Color"].default_value = colour
         bsdf.inputs["Roughness"].default_value = 0.32
         bsdf.inputs["Metallic"].default_value = 0.15
+        # emissive lift: the first pass rendered a grey letter on a dark ground
+        # that read as "black frame" rather than "letter"
+        try:
+            bsdf.inputs["Emission Color"].default_value = colour
+            bsdf.inputs["Emission Strength"].default_value = 0.55
+        except KeyError:
+            pass
     ob.data.materials.append(m)
     return ob
 
@@ -151,7 +158,7 @@ def _set_interpolation(ob, before, after):
 
 def animate_fall(ob):
     """Accelerating fall, one-frame squash, small settle."""
-    top = 13.0
+    top = 11.0
     # start high
     ob.location = (0, 0, top)
     ob.keyframe_insert("location", frame=1)
@@ -174,6 +181,11 @@ def animate_fall(ob):
     ob.keyframe_insert("scale", frame=FALL_END + 7)
     ob.scale = (1, 1, 1)
     ob.keyframe_insert("scale", frame=FALL_END + 14)
+    # hold, then a barely-there drift so the held frames are not static
+    ob.location = (0, 0, 0)
+    ob.keyframe_insert("location", frame=TOTAL)
+    ob.rotation_euler = (math.radians(90), 0, math.radians(1.6))
+    ob.keyframe_insert("rotation_euler", frame=TOTAL)
 
 
 def add_camera():
@@ -181,7 +193,7 @@ def add_camera():
     cam_data.lens = 48
     cam = bpy.data.objects.new("Cam", cam_data)
     bpy.context.collection.objects.link(cam)
-    cam.location = (0, -7.4, 2.05)
+    cam.location = (0, -9.6, 2.15)
     cam.rotation_euler = (math.radians(78), 0, 0)
     bpy.context.scene.camera = cam
     return cam

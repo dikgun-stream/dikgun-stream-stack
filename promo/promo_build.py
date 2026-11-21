@@ -470,12 +470,19 @@ def build(args) -> int:
         out = segdir / f"stinger_{ch}.mp4"
         if out.is_file():
             return out
+        # The stinger MUST carry a silent audio track. Concatenating a video-only
+        # file with audio+video segments using -c copy drops the audio for the
+        # stinger's duration, so the music drifts and glitches on every accent and
+        # the A/V offset shifts the following cuts.
         r = subprocess.run([
             FFMPEG, "-v", "error", "-y", "-framerate", str(OUT_FPS),
             "-i", os.path.join(src_dir, "f_%04d.png"),
+            "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
             "-vf", f"scale={OUT_W}:{OUT_H},setsar=1",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-            "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(out)],
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+            "-shortest", "-movflags", "+faststart", str(out)],
             capture_output=True, timeout=600)
         return out if r.returncode == 0 and out.is_file() else None
 
@@ -494,8 +501,11 @@ def build(args) -> int:
         subprocess.run([
             FFMPEG, "-v", "error", "-y", "-f", "lavfi",
             "-i", f"color=c={colour}:s={OUT_W}x{OUT_H}:d=0.034:r={OUT_FPS}",
+            "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-            "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(p)],
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+            "-shortest", "-movflags", "+faststart", str(p)],
             check=True, timeout=300)
         return p
 
