@@ -140,3 +140,35 @@ powershell -File make-promo.ps1 -Music song.mp3 -Game all -Mode edit -Duration 1
 `--mode edit` only stops the stingers being built or inserted. The cut grid, the
 kill-on-beat selection, the false-drop handling and the kill distortion are all
 unchanged, so a music edit keeps the same intensity as the promo.
+
+## Iterating without re-encoding everything
+
+Every rendered segment is cached in `segcache/`, keyed on the source file plus its
+size and mtime, the start, the length, the speed, and whether the glitch was
+applied. Re-rendering a cut where nothing changed costs seconds:
+
+```
+segments: 59 reused from cache, 0 encoded     7s
+```
+
+To change a single shot, save the cut as an EDL, edit the JSON, render from it:
+
+```powershell
+# 1. save the planned cut (no encode)
+powershell -File make-promo.ps1 -Music black-sky.m4a -Game all -Duration 90 `
+  -Outro outro.mp4 -SaveEdl cut.json -DryRun
+
+# 2. edit cut.json - each shot has at / len / start / src / mode
+#    at is in VIDEO seconds, matching the finished video
+
+# 3. render from the edited EDL
+powershell -File make-promo.ps1 -Music black-sky.m4a -Game all -Duration 90 `
+  -Outro outro.mp4 -FromEdl cut.json -Out promo.mp4
+```
+
+Measured on a 59-shot cut: changing one shot's source start re-encoded **1
+segment** and finished in **18 seconds**, against ~5 minutes for a full rebuild.
+
+The EDL is written *after* the stinger time compensation, so it is the final
+design - loading it applies no further trimming. `--no-cache` forces a full
+re-encode when you suspect a stale entry.

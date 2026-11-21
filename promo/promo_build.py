@@ -28,6 +28,7 @@ the music is mixed in. Re-running a bad segment is then a one-line fix.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import random
@@ -205,6 +206,67 @@ def _atempo_chain(speed: float) -> str:
         v /= 0.5
     parts.append(v)
     return ",".join(f"atempo={p:.4f}" for p in parts)
+
+
+CACHE_DIR = HERE / "segcache"
+CACHE_TAG = "crf20-veryfast"     # bump when the encoder settings below change
+
+
+def stinger_seconds() -> float:
+    """Duration of one stinger, from the rendered frame count.
+
+    Exact, and known before anything is encoded - which lets the timing
+    compensation run during planning rather than after the encode starts.
+    """
+    d = Path(STING) / "DIKGUN"
+    if not d.is_dir():
+        return 0.0
+    n = len(list(d.glob("f_*.png")))
+    return n / float(OUT_FPS) if n else 0.0
+
+
+def segment_key(src: Path, start: float, length: float, speed: float,
+                src_len: float | None, glitch: bool, heavy: bool) -> str:
+    """Identity of a rendered segment.
+
+    Source size AND mtime are included, so re-recording or re-trimming the source
+    invalidates the entry instead of silently reusing a stale clip.
+    """
+    st = src.stat()
+    raw = "|".join([
+        str(src.resolve()), str(st.st_size), str(int(st.st_mtime)),
+        f"{start:.3f}", f"{length:.3f}", f"{speed:.4f}",
+        "" if src_len is None else f"{src_len:.3f}",
+        "g" if glitch else "-", "h" if heavy else "-", CACHE_TAG,
+    ])
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:20]
+
+
+def cache_get(key: str, out: Path) -> bool:
+    """Hardlink a cached segment into place, falling back to a copy."""
+    src = CACHE_DIR / f"{key}.mp4"
+    if not src.is_file():
+        return False
+    try:
+        if out.exists():
+            out.unlink()
+        os.link(src, out)
+    except OSError:
+        import shutil
+        shutil.copy2(src, out)
+    return True
+
+
+def cache_put(key: str, produced: Path) -> None:
+    CACHE_DIR.mkdir(exist_ok=True)
+    dst = CACHE_DIR / f"{key}.mp4"
+    if dst.exists():
+        return
+    try:
+        os.link(produced, dst)
+    except OSError:
+        import shutil
+        shutil.copy2(produced, dst)
 
 
 def extract(src: Path, start: float, length: float, out: Path,
@@ -600,6 +662,94 @@ def build(args) -> int:
         except (ValueError, IndexError):
             print(f"  pin ignored, need PATH|src_start|src_end|at|len : {spec}")
 
+    # ---- accents and the timing compensation, applied BEFORE the EDL is
+    # written. A stinger occupies video time the music does not wait for, so each
+    # one's duration is taken out of the shots that follow. Doing this during
+    # planning is what makes a saved EDL final rather than a pre-trim snapshot.
+    flash_every = 6
+    accent_before: set[int] = set()
+    stinger_count = 0 if args.mode == "edit" else len(
+        [d for d in ("D", "DI", "DIK", "DIKG", "DIKGU", "DIKGUN")
+         if (Path(STING) / d).is_dir()])
+    if stinger_count:
+        _n = 0
+        for _i, _sh in enumerate(shots):
+            if (_sh["mode"] == "kill" and _i % flash_every == 0 and _i > 0
+                    and _n < stinger_count):
+                accent_before.add(_i)
+                _n += 1
+
+    stinger_secs = stinger_seconds() if accent_before else 0.0
+    if getattr(args, "from_edl", "") or "":
+        # the EDL is the finished design; do not re-trim it
+        accent_before = {i for i in accent_before}
+        stinger_secs_used = 0.0
+    else:
+        stinger_secs_used = stinger_secs
+
+    if stinger_secs_used and accent_before:
+        print(f"  stinger duration {stinger_secs_used:.2f}s - compensated out of "
+              f"the following shots")
+        carry = 0.0
+        for _i, _sh in enumerate(shots):
+            if _i in accent_before:
+                carry += stinger_secs_used
+            if carry > 0.0 and _sh.get("mode") != "pin":
+                take = min(carry, max(0.0, _sh["len"] - 0.40))
+                _sh["len"] -= take
+                carry -= take
+        if carry > 0.05:
+            print(f"  warning: {carry:.2f}s of stinger time could not be absorbed")
+
+    # ---- render from a hand-edited EDL instead of re-planning.
+    # This is the modular path: change one shot in the JSON and only that
+    # segment's cache key moves, so only it re-encodes.
+    src_edl = getattr(args, "from_edl", "") or ""
+    if src_edl:
+        import json as _json
+        with open(src_edl, encoding="utf-8") as fh:
+            ed = _json.load(fh)
+        loaded = []
+        for r in ed.get("shots", []):
+            clip = {"path": r["src"], "game": r.get("game", "?")}
+            sh = {"clip": clip, "start": float(r["start"]), "len": float(r["len"]),
+                  "mode": r.get("mode", "play"), "at": float(r["at"]) + t0,
+                  "speed": float(r.get("speed", 1.0))}
+            if r.get("src_len"):
+                sh["src_len"] = float(r["src_len"])
+            if r.get("heavy"):
+                sh["heavy"] = True
+            loaded.append(sh)
+        if not loaded:
+            raise SystemExit(f"EDL has no shots: {src_edl}")
+        shots = loaded
+        gameplay = sum(x["len"] for x in shots)
+        print(f"  EDL loaded: {src_edl} - {len(shots)} shots, {gameplay:.2f}s")
+
+    edl = getattr(args, "save_edl", "") or ""
+    if edl:
+        import json as _json
+        rows = []
+        for sh in shots:
+            src = resolve(sh["clip"])
+            rows.append({
+                # video seconds, not music seconds - an EDL you hand-edit has to
+                # match what you see when you scrub the output
+                "at": round(sh["at"] - t0, 4), "len": round(sh["len"], 4),
+                "mode": sh["mode"], "game": sh["clip"].get("game", "?"),
+                "start": round(sh["start"], 4),
+                "src": str(src) if src else None,
+                "speed": round(float(sh.get("speed", 1.0)), 4),
+                "src_len": sh.get("src_len"),
+                "heavy": bool(sh.get("heavy")),
+            })
+        meta = {"music": str(music_path), "start": t0, "duration": duration,
+                "gameplay": gameplay, "outro": outro_path or None,
+                "outro_secs": outro_secs, "mode": args.mode, "shots": rows}
+        with open(edl, "w", encoding="utf-8") as fh:
+            _json.dump(meta, fh, indent=1)
+        print(f"  EDL saved: {edl} ({len(rows)} shots)")
+
     if args.dry_run:
         print(f"  (times below are seconds into the finished video; t0={t0:.1f})")
         for s in shots[:25]:
@@ -673,69 +823,35 @@ def build(args) -> int:
     black = make_flash("flash_black.mp4", "black")
     white = make_flash("flash_white.mp4", "white")
 
-    # A stinger occupies video time that the music does not wait for. Inserting
-    # 1.2s clips without compensating pushed every later cut late - the v9 list
-    # summed to 97.68s against a 90s plan. The duration is therefore taken out of
-    # the shot that follows, which keeps kills on the beat.
-    stinger_secs = 0.0
-    if stinger_files:
-        try:
-            d = subprocess.run(
-                [FFPROBE, "-v", "error", "-show_entries", "format=duration",
-                 "-of", "csv=p=0", str(stinger_files[0])],
-                capture_output=True, text=True, timeout=120).stdout.strip()
-            stinger_secs = float(d or 0)
-        except (ValueError, subprocess.SubprocessError):
-            stinger_secs = 0.0
-    if stinger_secs:
-        print(f"  stinger duration {stinger_secs:.2f}s - compensated out of the "
-              f"following shots")
-
-    flash_every = 6
-    accent_before: set[int] = set()
-    _n = 0
-    for _i, _s in enumerate(shots):
-        if (_s["mode"] == "kill" and _i % flash_every == 0 and _i > 0
-                and stinger_files and _n < len(stinger_files)):
-            accent_before.add(_i)
-            _n += 1
-
-    if stinger_secs and accent_before and args.mode == "promo":
-        # A single kill cut is ~0.7s, so one stinger cannot be absorbed by the
-        # shot after it. Carry the remainder forward across as many shots as it
-        # takes, stopping each shot at a 0.4s floor.
-        carry = 0.0
-        for _i, _s in enumerate(shots):
-            if _i in accent_before:
-                carry += stinger_secs
-            # A pinned shot's real duration is src_len/speed, NOT `len`. Trimming
-            # its `len` shortened the plan without shortening the encode, which
-            # left the cut 0.70s long and cut the outro's fade to black.
-            if carry > 0.0 and _s.get("mode") != "pin":
-                take = min(carry, max(0.0, _s["len"] - 0.40))
-                _s["len"] -= take
-                carry -= take
-        if carry > 0.05:
-            print(f"  warning: {carry:.2f}s of stinger time could not be absorbed")
-
-
     made: list = []
+    n_cache = n_new = 0
     for i, s in enumerate(shots):
         src = resolve(s["clip"])
         if not src:
             continue
         out = segdir / f"seg_{i:03d}.mp4"
-        if extract(src, s["start"], s["len"], out,
-                   glitch=(s["mode"] == "kill"),
-                   heavy=bool(s.get("heavy")),
-                   speed=float(s.get("speed", 1.0)),
-                   src_len=s.get("src_len")):
+        glitch = (s["mode"] == "kill")
+        heavy = bool(s.get("heavy"))
+        speed = float(s.get("speed", 1.0))
+        src_len = s.get("src_len")
+
+        key = segment_key(src, s["start"], s["len"], speed, src_len, glitch, heavy)
+        if not args.no_cache and cache_get(key, out):
             made.append(out)
+            n_cache += 1
+            continue
+
+        if extract(src, s["start"], s["len"], out,
+                   glitch=glitch, heavy=heavy, speed=speed, src_len=src_len):
+            made.append(out)
+            n_new += 1
+            if not args.no_cache:
+                cache_put(key, out)
         else:
             print(f"    cut {i} failed ({s['clip']['game']})")
     if not made:
         raise SystemExit("no segments extracted")
-    print(f"  extracted {len(made)} segments")
+    print(f"  segments: {n_cache} reused from cache, {n_new} encoded")
 
     # Flash accents: one every ~6s on a drop cut, mostly black, occasional white.
     # That cadence and ratio come from measuring the reference edits.
@@ -835,6 +951,12 @@ def main() -> int:
                     help="seconds into the track to begin at")
     ap.add_argument("--outro", default="", help="mp4 to append as the outro; "
                     "gameplay is shortened to make room for it")
+    ap.add_argument("--save-edl", default="",
+                    help="write the planned cut to JSON for hand editing")
+    ap.add_argument("--from-edl", default="",
+                    help="render from a saved EDL instead of re-planning")
+    ap.add_argument("--no-cache", action="store_true",
+                    help="re-encode every segment, ignore the segment cache")
     ap.add_argument("--mode", choices=("promo", "edit"), default="promo",
                     help="promo = with DIKGUN letter stingers; edit = same cut and "
                          "the same kill/music interplay, just no letter cards")
