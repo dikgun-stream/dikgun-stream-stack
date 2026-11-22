@@ -80,7 +80,7 @@ def crop_for(x, y, w, h):
 
 def item(name, uuid, pos, size, align=5):
     return {
-        "name": name, "source_uuid": uuid, "visible": True, "locked": True,
+        "name": name, "source_uuid": uuid, "visible": True, "locked": False,
         "rot": 0.0, "scale_ref": {"x": 1080.0, "y": 1920.0}, "align": align,
         "bounds_type": 1, "bounds_align": 0, "bounds_crop": False,
         "id": 0, "group_item_backup": False,
@@ -107,7 +107,8 @@ def ensure_mask_source(j, scene_items):
     src = next((s for s in j["sources"] if s.get("name") == MASK_SOURCE), None)
     if src:
         return src["uuid"]
-    uuid = __import__("uuid").uuid4().hex
+    # OBS stores uuids dashed; a dashless one is not guaranteed to survive load
+    uuid = str(__import__("uuid").uuid4())
     j["sources"].append({
         "prev_ver": 537001985, "name": MASK_SOURCE,
         "uuid": uuid, "id": "color_source_v3",
@@ -118,9 +119,10 @@ def ensure_mask_source(j, scene_items):
         "balance": 0.5, "enabled": True, "muted": False,
         "push-to-mute": False, "push-to-mute-delay": 0,
         "push-to-talk": False, "push-to-talk-delay": 0,
-        "sync": 0, "filters": [], "deinterlace_mode": 0,
+        "filters": [], "deinterlace_mode": 0,
         "deinterlace_field_order": 0, "monitoring_type": 0,
-        "canvas_uuid": None, "hotkeys": {},
+        "monitoring_enabled": False,
+        "canvas_uuid": None, "hotkeys": {}, "private_settings": {},
     })
     return uuid
 
@@ -145,16 +147,30 @@ def main() -> int:
 
     items = scene["settings"].setdefault("items", [])
     before = len(items)
-    items[:] = [i for i in items if not (i.get("name") or "").startswith(MARK)]
-    # An earlier version named the insets after the capture source, so they became
-    # indistinguishable from the main band and survived every cleanup. Keep only
-    # the FIRST item using the capture (the gameplay band) and drop the rest.
-    seen_cap = False
+    # Identify our previous items by the CROP RECT, not by name. OBS rewrites a
+    # scene item's "name" to its source name when it saves, so the APEX_HUD_
+    # prefix is gone after the first save; matching on it would miss the existing
+    # insets and stack a second set on top. The crop is what defines them.
+    our_rects = {(r[0], r[1], r[2], r[3]) for r in INSETS.values()}
+
+    def crop_rect(it):
+        l = int(it.get("crop_left", 0) or 0)
+        r = int(it.get("crop_right", 0) or 0)
+        t = int(it.get("crop_top", 0) or 0)
+        b = int(it.get("crop_bottom", 0) or 0)
+        return (l, t, SRC_W - l - r, SRC_H - t - b)
+
     kept = []
+    seen_cap = False
     for i in items:
-        if (i.get("name") or "") == CAPTURE:
+        nm = i.get("name") or ""
+        if nm == MASK_SOURCE:
+            continue                      # our mask source, re-added below
+        if nm == CAPTURE and crop_rect(i) in our_rects:
+            continue                      # a previous inset
+        if nm == CAPTURE:
             if seen_cap:
-                continue
+                continue                  # a stray duplicate of the band
             seen_cap = True
         kept.append(i)
     items[:] = kept
