@@ -538,6 +538,7 @@ Also flagged: `duration()` silently returns 0.0 on probe failure (garbage window
 | Doc | Covers |
 |---|---|
 | `README.md` | this file — features and operation |
+| `SOCIAL-STRATEGY.md` | launch plan and posting strategy for X / YouTube / TikTok |
 | `SETUP.md` | machine setup and wiring order |
 | `RECOVERY.md` | what git gives you, restore order, backup |
 | `obs-build/BUILD-SPEC.md` | vertical scene constants and layout spec |
