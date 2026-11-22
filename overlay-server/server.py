@@ -32,6 +32,7 @@ from obs_client import OBSClient
 from twitch_irc import TwitchIRC
 from chat_engine import ChatEngine
 from input_capture import InputWatcher
+from autoclip import AutoClipper, DEFAULTS as AUTOCLIP_DEFAULTS
 from deadlock_hud import (read_scoreboard, find_badge, read_damage, read_items,
                           KILL_THRESHOLD)
 
@@ -49,6 +50,7 @@ CONFIG_PATH = ROOT / "config.json"
 ALERT_TYPES = {"follow", "sub", "resub", "giftsub", "cheer", "raid", "tip", "host", "test"}
 
 DEFAULT_CONFIG: dict[str, Any] = {
+    "autoclip": dict(AUTOCLIP_DEFAULTS),
     "alerts": {"duration_ms": 4500, "max_queue": 6, "sound": False},
     "starting_soon": {"minutes": 5, "headline": "Starting Soon", "subline": "Grab a drink."},
     "goals": {
@@ -180,6 +182,12 @@ OBS_EVENTS_TO_FORWARD = {
 
 
 def _on_obs_event(event_type: str, data: dict) -> None:
+    # the auto-clipper needs the saved path to trim the clip it just triggered
+    if event_type == "ReplayBufferSaved":
+        path = (data or {}).get("savedReplayPath")
+        if path:
+            asyncio.ensure_future(AUTOCLIP.on_replay_saved(path))
+        return
     if event_type not in OBS_EVENTS_TO_FORWARD:
         return
     # called from the OBS reader loop, which is already on the event loop
@@ -189,6 +197,13 @@ def _on_obs_event(event_type: str, data: dict) -> None:
 
 
 OBS.on_event = _on_obs_event
+
+# auto-clipping: watches the game capture, groups kills, fires the replay buffer
+AUTOCLIP = AutoClipper(
+    CONFIG.get("autoclip") or {}, OBS,
+    on_event=lambda st: asyncio.ensure_future(
+        HUB.to_controls({"kind": "autoclip", "state": st})),
+)
 
 
 # --------------------------------------------------------------------------- twitch irc
@@ -534,6 +549,7 @@ async def lifespan(app: FastAPI):
     tasks.append(asyncio.create_task(_kill_watch_loop(), name="kill-watch"))
     tasks.append(asyncio.create_task(_item_watch_loop(), name="item-watch"))
     tasks.append(asyncio.create_task(_capture_janitor(), name="capture-janitor"))
+    tasks.append(asyncio.create_task(AUTOCLIP.run(), name="autoclip"))
     # probe clip durations once in the background; the player works without them
     try:
         clip_lib.start_duration_fill(CLIPS_ROOT, CLIPS_CACHE)
@@ -1541,6 +1557,22 @@ async def _dl_broadcast() -> None:
 async def deadlock_grab() -> dict:
     path = await grab_game_frame("manual")
     return {"ok": bool(path), "path": path}
+
+
+@app.get("/api/autoclip/state")
+async def autoclip_state() -> dict:
+    """What the watcher is doing right now, and the clips it has made."""
+    return AUTOCLIP.state()
+
+
+@app.post("/api/autoclip/enable")
+async def autoclip_enable(body: dict) -> dict:
+    """Turn the watcher on or off. OBS does not need to restart."""
+    on = bool(body.get("enabled"))
+    AUTOCLIP.cfg["enabled"] = on
+    CONFIG.setdefault("autoclip", {})["enabled"] = on
+    save_config(CONFIG)
+    return {"ok": True, "enabled": on, "state": AUTOCLIP.state()}
 
 
 @app.get("/api/deadlock/state")
