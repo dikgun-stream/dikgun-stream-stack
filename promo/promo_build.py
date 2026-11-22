@@ -364,7 +364,7 @@ def extract(src: Path, start: float, length: float, out: Path,
 
 # server-side padding: the API builds windows as [moment - 5, moment + 3]
 PAD_BEFORE = 5.0
-KILL_LEAD = 0.45      # start this far before the kill
+KILL_LEAD = 0.30      # start this far before the kill; 0.45 starved the tail
 KILL_TAIL = 1.55      # and hold this long, so the kill and its result are shown
 
 
@@ -712,6 +712,7 @@ def assemble_songs(spec: str, duration: float, out_path: Path) -> Path:
     return out_path
 
 
+KILL_MIN = 0.70            # a kill cut may not shrink below this: 0.30 lead + 0.40 tail
 SYNC_MIN_SHOT = 0.35      # a shot may not shrink below this
 SYNC_MAX_GROW = 0.45      # how much a kill may grow to absorb a nudge
 
@@ -734,7 +735,9 @@ def verify_kills(shots, starts, beats_video, tol) -> dict:
     for i, sh in enumerate(shots):
         if sh.get("mode") != "kill":
             continue
-        t = starts[i]
+        # the beat should carry the KILL, which lands KILL_LEAD into the shot -
+        # measuring the shot start is what let the sync eat the lead
+        t = starts[i] + KILL_LEAD
         near = min(beats_video, key=lambda b: abs(b - t)) if beats_video else t
         errs.append((i, t, near, t - near))
     if not errs:
@@ -766,8 +769,13 @@ def sync_kills(shots, accent_before, stinger_secs, beats_music, t0, tol,
             prev, cur = shots[i - 1], shots[i]
             if prev.get("mode") == "pin" or cur.get("mode") == "pin":
                 continue
-            # the previous shot gives up `err`, the kill takes it: total unchanged
-            give = max(-(prev["len"] - SYNC_MIN_SHOT), min(err, SYNC_MAX_GROW))
+            # the previous shot gives up `err`, the kill takes it: total unchanged.
+            # If the previous shot is ITSELF a kill, it must keep its room too.
+            prev_floor = KILL_MIN if prev.get("mode") == "kill" else SYNC_MIN_SHOT
+            give = max(-(prev["len"] - prev_floor), min(err, SYNC_MAX_GROW))
+            # the kill itself may be the one taking the nudge - never below its floor
+            cur_floor = KILL_MIN if cur.get("mode") == "kill" else SYNC_MIN_SHOT
+            give = max(give, -(cur["len"] - cur_floor))
             if abs(give) < 1e-4:
                 continue
             prev["len"] = round(prev["len"] - give, 4)
@@ -907,7 +915,8 @@ def build(args) -> int:
             if _i in accent_before:
                 carry += stinger_secs_used
             if carry > 0.0 and _sh.get("mode") != "pin":
-                take = min(carry, max(0.0, _sh["len"] - 0.40))
+                floor = KILL_MIN if _sh.get("mode") == "kill" else 0.40
+                take = min(carry, max(0.0, _sh["len"] - floor))
                 _sh["len"] -= take
                 carry -= take
         # With the letters clustered at the very end there are not enough shots
@@ -919,7 +928,8 @@ def build(args) -> int:
                     break
                 if _sh.get("mode") == "pin":
                     continue
-                take = min(carry, max(0.0, _sh["len"] - 0.40))
+                floor = KILL_MIN if _sh.get("mode") == "kill" else 0.40
+                take = min(carry, max(0.0, _sh["len"] - floor))
                 _sh["len"] -= take
                 carry -= take
         if carry > 0.05:
@@ -940,7 +950,8 @@ def build(args) -> int:
                     break
                 if _sh.get("mode") == "pin":
                     continue
-                new_len = max(0.30, _sh["len"] - remaining)
+                floor = KILL_MIN if _sh.get("mode") == "kill" else 0.30
+                new_len = max(floor, _sh["len"] - remaining)
                 remaining -= (_sh["len"] - new_len)
                 _sh["len"] = new_len
             got = expected - remaining
@@ -1153,9 +1164,10 @@ def build(args) -> int:
                 src = resolve(sh["clip"])
                 if not src:
                     continue
+                floor = KILL_MIN if sh.get("mode") == "kill" else 0.30
                 new_len = sh["len"] - remaining
-                if new_len < 0.30:
-                    new_len = 0.30
+                if new_len < floor:
+                    new_len = floor
                 give = sh["len"] - new_len
                 if give <= 0.005:
                     continue

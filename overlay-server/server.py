@@ -33,6 +33,7 @@ from twitch_irc import TwitchIRC
 from chat_engine import ChatEngine
 from input_capture import InputWatcher
 from autoclip import AutoClipper, DEFAULTS as AUTOCLIP_DEFAULTS
+import yt_chat
 from deadlock_hud import (read_scoreboard, find_badge, read_damage, read_items,
                           KILL_THRESHOLD)
 
@@ -51,6 +52,7 @@ ALERT_TYPES = {"follow", "sub", "resub", "giftsub", "cheer", "raid", "tip", "hos
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "autoclip": dict(AUTOCLIP_DEFAULTS),
+    "youtube": {"videoId": "", "verticalVideoId": "", "chatEnabled": False},
     "alerts": {"duration_ms": 4500, "max_queue": 6, "sound": False},
     "starting_soon": {"minutes": 5, "headline": "Starting Soon", "subline": "Grab a drink."},
     "goals": {
@@ -527,6 +529,64 @@ async def _input_pump() -> None:
             asyncio.create_task(grab_game_frame("hotkey", 1920, 1080))
 
 
+YT_CHAT_STATE: dict = {"state": "disabled", "seen": 0, "last_error": None}
+
+
+async def _yt_chat_loop() -> None:
+    """Poll YouTube live chat via Innertube (no OAuth, just the video id).
+
+    Messages are emitted with the same shape as Twitch PRIVMSG, plus
+    `source: "youtube"`. There is no logo, colour or branding in the payload:
+    by the time it lands in the chat overlay it is plain text, so nothing on
+    screen reveals where it came from. Overlays that should stay Twitch-only
+    can filter on the `source` field.
+    """
+    yt = CONFIG.get("youtube") or {}
+    vid = str(yt.get("videoId") or "").strip()
+    if not vid or not bool(yt.get("chatEnabled")):
+        YT_CHAT_STATE.update(state="disabled" if vid else "no-video-id")
+        return
+    token, seen, wait = None, set(), 8.0
+    YT_CHAT_STATE.update(state="starting")
+    while True:
+        try:
+            if token is None:
+                token = await asyncio.to_thread(yt_chat.fetch_token, vid)
+                if not token:
+                    YT_CHAT_STATE.update(state="no-chat-on-page")
+                    await asyncio.sleep(20.0)
+                    continue
+            msgs, nxt, status = await asyncio.to_thread(yt_chat.poll, token)
+            if status != "ok":
+                token = None          # page changed / replay: re-fetch the token
+                YT_CHAT_STATE.update(state=status, last_error=status)
+                await asyncio.sleep(15.0)
+                continue
+            for m in msgs:
+                if m["id"] in seen:
+                    continue
+                seen.add(m["id"])
+                if len(seen) > 5000:
+                    seen = set(list(seen)[-2000:])
+                YT_CHAT_STATE.update(state="ok", seen=len(seen), last_error=None)
+                await _irc_emit({
+                    "kind": "event", "type": "chat", "channel": "chat",
+                    "user": m["user"], "message": m["text"],
+                    "mod": m["is_mod"],
+                    "badge": "MOD" if m["is_mod"] else "",
+                    "source": "youtube",
+                })
+            token = nxt or token
+            wait = 8.0
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            YT_CHAT_STATE.update(state=f"error: {exc}"[:80], last_error=str(exc)[:200])
+            token = None
+            await asyncio.sleep(30.0)
+        await asyncio.sleep(wait)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _INPUT_QUEUE, _INPUT_LOOP, _INPUT
@@ -550,6 +610,7 @@ async def lifespan(app: FastAPI):
     tasks.append(asyncio.create_task(_item_watch_loop(), name="item-watch"))
     tasks.append(asyncio.create_task(_capture_janitor(), name="capture-janitor"))
     tasks.append(asyncio.create_task(AUTOCLIP.run(), name="autoclip"))
+    tasks.append(asyncio.create_task(_yt_chat_loop(), name="yt-chat"))
     # probe clip durations once in the background; the player works without them
     try:
         clip_lib.start_duration_fill(CLIPS_ROOT, CLIPS_CACHE)
@@ -1573,6 +1634,24 @@ async def autoclip_enable(body: dict) -> dict:
     CONFIG.setdefault("autoclip", {})["enabled"] = on
     save_config(CONFIG)
     return {"ok": True, "enabled": on, "state": AUTOCLIP.state()}
+
+
+@app.get("/api/yt-chat/state")
+async def yt_chat_state() -> dict:
+    """YouTube chat poller state, and the config it depends on."""
+    yt = CONFIG.get("youtube") or {}
+    return {**YT_CHAT_STATE, "videoId": yt.get("videoId") or "",
+            "chatEnabled": bool(yt.get("chatEnabled"))}
+
+
+@app.post("/api/yt-chat/enable")
+async def yt_chat_enable(body: dict) -> dict:
+    on = bool(body.get("enabled"))
+    CONFIG.setdefault("youtube", {})["chatEnabled"] = on
+    if body.get("videoId"):
+        CONFIG["youtube"]["videoId"] = str(body["videoId"]).strip()
+    save_config(CONFIG)
+    return {"ok": True, "state": await yt_chat_state()}
 
 
 @app.get("/api/deadlock/state")
