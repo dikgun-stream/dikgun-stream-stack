@@ -6,8 +6,8 @@
 $ErrorActionPreference = 'Stop'
 
 $obs    = 'C:\Program Files\obs-studio'
-$stage  = 'C:\Users\JR\Documents\deepseek-harness\default-workspace\obs-build\aitum'
-$backup = 'C:\Users\JR\Documents\deepseek-harness\default-workspace\obs-build\backup-se-live'
+$stage  = Join-Path $PSScriptRoot 'aitum'
+$backup = Join-Path $PSScriptRoot 'backup-se-live'
 
 if (Get-Process obs64 -ErrorAction SilentlyContinue) {
     throw 'OBS is running. Close it before running this script.'

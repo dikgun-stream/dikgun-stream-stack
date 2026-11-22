@@ -1,3 +1,4 @@
+import os
 """Analyse the two existing edits to learn their structure.
 
 What this measures, and why each one matters for building a generator:
@@ -23,7 +24,7 @@ import tempfile
 
 import numpy as np
 
-WORK = r"C:\Users\JR\Documents\deepseek-harness\default-workspace\obs-build\promo"
+WORK = os.path.dirname(os.path.abspath(__file__))
 FFMPEG = r"C:\ffmpeg\ffmpeg.exe"
 FFPROBE = r"C:\ffmpeg\ffprobe.exe"
 

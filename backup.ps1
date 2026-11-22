@@ -47,6 +47,13 @@ foreach ($c in $serverCandidates) {
 if (-not $serverDir) { $serverDir = Join-Path $here 'overlay-server' }
 Write-Host "  server dir : $serverDir" -ForegroundColor DarkGray
 
+# If the OTHER tree also has a config.json, keep it too, tagged - silently
+# dropping either copy is how the two trees drifted apart in the first place.
+$altDir = $serverCandidates | Where-Object { $_ -ne $serverDir -and (Test-Path (Join-Path $_ 'config.json')) } | Select-Object -First 1
+if ($altDir) {
+    Write-Host "  alt config : $altDir" -ForegroundColor DarkGray
+}
+
 $items = @(
     @{ Src = (Join-Path $serverDir 'config.json');          Dst = 'config.json' }
     @{ Src = (Join-Path $serverDir 'laughter_index.json');  Dst = 'laughter_index.json' }
@@ -57,6 +64,9 @@ $items = @(
     @{ Src = (Join-Path $APPDATA_DIR 'obs-studio\plugin_config\aitum-multistream\config.json'); Dst = 'obs\aitum-multistream.json' }
     @{ Src = (Join-Path $APPDATA_DIR 'obs-studio\global.ini');           Dst = 'obs\global.ini' }
 )
+if ($altDir) {
+    $items += @{ Src = (Join-Path $altDir 'config.json'); Dst = 'config-alt.json' }
+}
 
 Write-Host ''
 Write-Host '  DikGun machine-state backup' -ForegroundColor Cyan

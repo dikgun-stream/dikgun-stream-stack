@@ -40,7 +40,7 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
-SERVER = Path(r"C:\Users\JR\Documents\deepseek-harness\default-workspace\overlay-server")
+
 STING = str(HERE / "stingers")   # Blender letter renders
 FFMPEG = r"C:\ffmpeg\ffmpeg.exe"
 FFPROBE = r"C:\ffmpeg\ffprobe.exe"

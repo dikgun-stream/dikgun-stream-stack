@@ -38,8 +38,9 @@ KEY = 128
 BG = (18, 22, 30)
 FG = (235, 242, 250)
 
-DECK = r"C:\Users\JR\Documents\deepseek-harness\default-workspace\streamer-mode\deck"
-SM = r"C:\Users\JR\Documents\deepseek-harness\default-workspace\streamer-mode"
+HERE = Path(__file__).resolve().parent
+DECK = str(HERE.parent / "streamer-mode" / "deck")
+SM = str(HERE.parent / "streamer-mode")
 
 GREEN = (74, 222, 128)
 BLUE = (56, 189, 248)

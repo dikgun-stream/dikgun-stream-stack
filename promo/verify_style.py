@@ -1,3 +1,4 @@
+import os
 """Verify the rendered promo: freeze at cuts, and flash accents.
 
 Freeze test: decode at output frame rate, compute mean absolute difference
@@ -14,7 +15,7 @@ import subprocess
 
 import numpy as np
 
-WORK = r"C:\Users\JR\Documents\deepseek-harness\default-workspace\obs-build\promo"
+WORK = os.path.dirname(os.path.abspath(__file__))
 FFMPEG = r"C:\ffmpeg\ffmpeg.exe"
 W, H, FPS = 160, 90, 60
 

@@ -1,3 +1,4 @@
+import os
 """Check for stalls at the actual cut points, not everywhere.
 
 A static gameplay shot produces near-identical frames too, so a global stall count
@@ -14,7 +15,7 @@ import subprocess
 
 import numpy as np
 
-WORK = r"C:\Users\JR\Documents\deepseek-harness\default-workspace\obs-build\promo"
+WORK = os.path.dirname(os.path.abspath(__file__))
 SEGS = os.path.join(WORK, "segments")
 FFMPEG = r"C:\ffmpeg\ffmpeg.exe"
 FFPROBE = r"C:\ffmpeg\ffprobe.exe"

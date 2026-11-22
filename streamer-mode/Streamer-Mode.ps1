@@ -338,7 +338,7 @@ if (-not (Test-Port -Port 7475)) {
     Write-Log 'dashboard server not listening - starting it'
     if (-not $DryRun) {
         $py = "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
-        $srv = 'C:\Users\JR\Documents\deepseek-harness\default-workspace\overlay-server'
+        $srv = Join-Path (Split-Path -Parent $PSScriptRoot) 'overlay-server'
         if (Test-Path $py) {
             Start-Process -FilePath $py `
                 -ArgumentList '-m', 'uvicorn', 'server:app', '--host', '127.0.0.1', '--port', '7475', '--log-level', 'warning' `

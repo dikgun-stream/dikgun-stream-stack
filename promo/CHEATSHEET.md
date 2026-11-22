@@ -3,7 +3,7 @@
 Everything runs from this folder:
 
 ```powershell
-cd C:\Users\JR\Documents\deepseek-harness\default-workspace\obs-build\promo
+cd <repo>\promo
 ```
 
 One prerequisite: the overlay server supplies the kill windows.

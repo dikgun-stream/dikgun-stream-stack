@@ -1,3 +1,4 @@
+import os
 """Measure how the two reference edits handle transitions.
 
 For both files:
@@ -18,7 +19,7 @@ import wave
 
 import numpy as np
 
-WORK = r"C:\Users\JR\Documents\deepseek-harness\default-workspace\obs-build\promo"
+WORK = os.path.dirname(os.path.abspath(__file__))
 FFMPEG = r"C:\ffmpeg\ffmpeg.exe"
 
 FILES = [
