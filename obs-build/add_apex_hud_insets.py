@@ -85,10 +85,16 @@ def item(name, uuid, pos, size, align=5):
         "bounds_type": 1, "bounds_align": 0, "bounds_crop": False,
         "id": 0, "group_item_backup": False,
         "pos": {"x": float(pos[0]), "y": float(pos[1])},
-        "pos_rel": {"x": (pos[0] / 1080.0) * 2 - 1, "y": (pos[1] / 1920.0) * 2 - 1},
+        # OBS treats the *_rel forms as canonical and derives pos/bounds from them.
+        # Derived from a known-good item (Deadlock band): bounds_rel = bounds/960
+        # and pos_rel = (pos - canvas_centre)/960, where the centre is (540,960).
+        # Getting this wrong once already placed every inset off-canvas at half
+        # size, which is why nothing appeared to change.
+        "pos_rel": {"x": (pos[0] - 540.0) / 960.0,
+                    "y": (pos[1] - 960.0) / 960.0},
         "scale": {"x": 1.0, "y": 1.0}, "scale_rel": {"x": 1.0, "y": 1.0},
         "bounds": {"x": float(size[0]), "y": float(size[1])},
-        "bounds_rel": {"x": size[0] / 1080.0, "y": size[1] / 1920.0},
+        "bounds_rel": {"x": size[0] / 960.0, "y": size[1] / 960.0},
         "scale_filter": "bilinear", "blend_method": "default",
         "blend_type": "normal",
         "show_transition": {"duration": 0}, "hide_transition": {"duration": 0},
@@ -140,6 +146,18 @@ def main() -> int:
     items = scene["settings"].setdefault("items", [])
     before = len(items)
     items[:] = [i for i in items if not (i.get("name") or "").startswith(MARK)]
+    # An earlier version named the insets after the capture source, so they became
+    # indistinguishable from the main band and survived every cleanup. Keep only
+    # the FIRST item using the capture (the gameplay band) and drop the rest.
+    seen_cap = False
+    kept = []
+    for i in items:
+        if (i.get("name") or "") == CAPTURE:
+            if seen_cap:
+                continue
+            seen_cap = True
+        kept.append(i)
+    items[:] = kept
     removed = before - len(items)
 
     mask_uuid = ensure_mask_source(j, items)
@@ -168,8 +186,8 @@ def main() -> int:
         if (i.get("name") or "") == INPUT_ITEM:
             old = (i["pos"]["x"], i["pos"]["y"])
             i["pos"] = {"x": float(INPUT_NEW_POS[0]), "y": float(INPUT_NEW_POS[1])}
-            i["pos_rel"] = {"x": (INPUT_NEW_POS[0] / 1080.0) * 2 - 1,
-                            "y": (INPUT_NEW_POS[1] / 1920.0) * 2 - 1}
+            i["pos_rel"] = {"x": (INPUT_NEW_POS[0] - 540.0) / 960.0,
+                            "y": (INPUT_NEW_POS[1] - 960.0) / 960.0}
             moved = old != INPUT_NEW_POS
 
     print(f"  scene        : {scene['name']}")
