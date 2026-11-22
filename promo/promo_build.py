@@ -860,8 +860,36 @@ def build(args) -> int:
         # leading into the outro.
         eligible = [_i for _i, _sh in enumerate(shots)
                     if _sh["mode"] == "kill" and _i > 0]
-        chosen = eligible[-stinger_count:] if len(eligible) > stinger_count else eligible
+        # `eligible[-n:]` takes the last n kill cuts, and kill cuts are ~0.9s
+        # apart in a drop - so all six stingers landed inside 5.5 seconds with
+        # almost no gameplay between them. Walk backwards with a minimum spacing
+        # instead, so the word builds across the tail rather than machine-gunning.
+        gap = float(getattr(args, "stinger_gap", 4.0))
+        chosen = []
+        last_t = None
+        for _i in reversed(eligible):
+            _t = shots[_i]["at"]
+            if last_t is not None and (last_t - _t) < gap:
+                continue
+            chosen.append(_i)
+            last_t = _t
+            if len(chosen) == stinger_count:
+                break
+        if len(chosen) < stinger_count:
+            # not enough room at this spacing: top up with the nearest leftovers
+            for _i in reversed(eligible):
+                if _i in chosen:
+                    continue
+                chosen.append(_i)
+                if len(chosen) == stinger_count:
+                    break
+            print(f"  note: only {len(chosen)} accent(s) fit at a {gap:.1f}s gap")
+        chosen.sort()
         accent_before.update(chosen)
+        if chosen:
+            times = [round(shots[_i]["at"] - t0, 1) for _i in chosen]
+            gaps = [round(b - a, 1) for a, b in zip(times, times[1:])]
+            print(f"  accents at video {times}s  (gaps {gaps})")
 
     stinger_secs = stinger_seconds() if accent_before else 0.0
     if getattr(args, "from_edl", "") or "":
@@ -903,11 +931,23 @@ def build(args) -> int:
         expected = sum(_sh["len"] for _sh in shots) + len(accent_before) * stinger_secs_used
         diff = expected - gameplay
         if abs(diff) > 0.02:
+            # Spread the correction across as many shots as it takes. Adjusting a
+            # single shot hits the 0.30s floor and leaves a residual, which showed
+            # up as a cut 0.41s long with the outro's fade clipped.
+            remaining = diff
             for _sh in reversed(shots):
-                if _sh.get("mode") != "pin":
-                    _sh["len"] = max(0.30, _sh["len"] - diff)
+                if abs(remaining) <= 0.02:
                     break
-            print(f"  reconciled by {-diff:+.2f}s so shots + stingers = {gameplay:.2f}s")
+                if _sh.get("mode") == "pin":
+                    continue
+                new_len = max(0.30, _sh["len"] - remaining)
+                remaining -= (_sh["len"] - new_len)
+                _sh["len"] = new_len
+            got = expected - remaining
+            print(f"  reconciled by {-diff:+.2f}s -> shots + stingers = {got:.2f}s "
+                  f"(target {gameplay:.2f}s)")
+            if abs(remaining) > 0.02:
+                print(f"  warning: {remaining:+.2f}s could not be reconciled")
 
     # ---- verify kills against the REAL timeline and nudge boundaries to fix
     # drift. Must run after compensation (which inserts the stinger time) and
@@ -1081,6 +1121,57 @@ def build(args) -> int:
         raise SystemExit("no segments extracted")
     print(f"  segments: {n_cache} reused from cache, {n_new} encoded")
 
+    # Frame rounding adds up: each segment is ceil()'d to a frame at 60fps, so
+    # ~59 segments drift ~+0.5s. The final mux is cut at `duration`, which was
+    # eating the end of the outro's fade. Measure the real total and give the
+    # excess back out of the last gameplay shot.
+    def _seg_dur(pth: Path) -> float:
+        out = subprocess.run([FFPROBE, "-v", "error", "-show_entries", "format=duration",
+                              "-of", "csv=p=0", str(pth)],
+                             capture_output=True, text=True, timeout=120).stdout.strip()
+        try:
+            return float(out or 0)
+        except ValueError:
+            return 0.0
+
+    if outro_secs and made:
+        n_acc = len(accent_before) if args.mode == "promo" else 0
+        measured = sum(_seg_dur(p) for p in made) + n_acc * stinger_secs + outro_secs
+        excess = measured - duration
+        if excess > 0.02:
+            # Walk backwards re-extracting shots until the excess is gone. One
+            # shot is often shorter than the excess, and the 0.30s floor stops it
+            # absorbing the rest - which left the outro's fade clipped.
+            remaining = excess
+            trimmed = 0
+            for idx in range(len(made) - 1, -1, -1):
+                if remaining <= 0.02:
+                    break
+                sh = shots[idx] if idx < len(shots) else None
+                if not sh or sh.get("mode") == "pin":
+                    continue
+                src = resolve(sh["clip"])
+                if not src:
+                    continue
+                new_len = sh["len"] - remaining
+                if new_len < 0.30:
+                    new_len = 0.30
+                give = sh["len"] - new_len
+                if give <= 0.005:
+                    continue
+                if extract(src, sh["start"], new_len, made[idx],
+                           glitch=(sh["mode"] == "kill" and (idx % 3) != 2),
+                           heavy=bool(sh.get("heavy")),
+                           speed=float(sh.get("speed", 1.0)),
+                           src_len=sh.get("src_len")):
+                    remaining -= give
+                    trimmed += 1
+            if remaining <= 0.02:
+                print(f"  trimmed {trimmed} shot(s) by {excess:.2f}s total "
+                      f"(frame rounding) so the outro plays in full")
+            else:
+                print(f"  warning: {remaining:+.2f}s of frame-rounding excess remains")
+
     # Flash accents: one every ~6s on a drop cut, mostly black, occasional white.
     # That cadence and ratio come from measuring the reference edits.
     listing_lines = []
@@ -1188,6 +1279,8 @@ def main() -> int:
                     help="write the planned cut to JSON for hand editing")
     ap.add_argument("--from-edl", default="",
                     help="render from a saved EDL instead of re-planning")
+    ap.add_argument("--stinger-gap", type=float, default=4.0,
+                    help="minimum seconds of gameplay between letter stingers")
     ap.add_argument("--sync-tol", type=float, default=0.04,
                     help="how close a kill must land to an onset, seconds")
     ap.add_argument("--no-sync", action="store_true",
