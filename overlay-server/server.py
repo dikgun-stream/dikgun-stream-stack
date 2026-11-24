@@ -939,6 +939,49 @@ async def api_clip_highlights(source: str = "all", limit: int = 400) -> dict:
     if want in ("all", "curated"):
         sources.append(("curated", load("curated_highlights.json"), None))
 
+    # Auto-clipped files: the clipper knows the kill offsets at save time and
+    # writes them beside the clip, so these are usable by the promo pipeline
+    # without a rescan. Everything else in the pool comes from indexes built by
+    # scanning recordings; this is the only source whose moments are known a priori.
+    if want in ("all", "kills", "kill", "autoclip", "autoclips"):
+        SHORT_TO_FULL = {
+            "apex": "Apex Legends", "deadlock": "Deadlock", "bf6": "Battlefield 6",
+            "finals": "The Finals", "r6": "Rainbow Six Siege",
+        }
+        for label, root in CLIP_MOUNTS:
+            adir = Path(root) / "AutoClips"
+            if not adir.is_dir():
+                continue
+            for side in sorted(adir.glob("*.json")):
+                clip = side.with_suffix(".mp4")
+                if not clip.is_file():
+                    continue
+                try:
+                    meta = json.loads(side.read_text(encoding="utf-8"))
+                except Exception:  # noqa: BLE001
+                    continue
+                dur = float(meta.get("duration") or 0)
+                if dur < 5:
+                    continue
+                g = str(meta.get("game") or "")
+                out.append({
+                    "rel": f"AutoClips/{clip.name}",
+                    "mount": label,
+                    "game": SHORT_TO_FULL.get(g.lower(), g),
+                    "title": clip.stem,
+                    "start": 0.0,
+                    "len": round(dur, 2),
+                    # `kills` is a COUNT everywhere else in this response (the sort
+                    # below multiplies it), so the offsets go in their own field.
+                    "kills": len(meta.get("kills") or []) or None,
+                    "kill_times": meta.get("kills") or None,
+                    "laugh_at": None,
+                    "peak": None,
+                    "source": "autoclip",
+                    "windows": [[0.0, round(dur, 2)]],
+                    "label": None,
+                })
+
     scanned = 0
     for label, data, _ in sources:
         if label == "curated":
@@ -1577,6 +1620,101 @@ async def poll_start(body: PollIn) -> dict:
 async def poll_end() -> dict:
     CHAT.end_poll()
     return {"ok": True, "results": CHAT.poll_results()}
+
+
+# --------------------------------------------------------------- tiktok (live studio)
+# TikTok goes out through TikTok LIVE Studio (its own encoder), not through OBS:
+# the app is driven over CDP by the scripts in C:/Users/JR/rev/livestudio, and the
+# overlays reach it as Link sources fed by the read-only shim + tunnel.
+import subprocess as _sp
+
+TIKTOK_DIR = Path(r"C:\Users\JR\rev\livestudio")
+TIKTOK_PY = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Python" / "Python312" / "python.exe"
+
+
+def _tiktok_run(args: list[str], timeout: int = 180) -> dict:
+    """Run one of the live-studio helper scripts and return its output."""
+    if not TIKTOK_DIR.is_dir():
+        return {"ok": False, "error": f"helper dir missing: {TIKTOK_DIR}"}
+    py = str(TIKTOK_PY) if TIKTOK_PY.is_file() else "python"
+    try:
+        r = _sp.run([py, *args], cwd=str(TIKTOK_DIR), capture_output=True,
+                    text=True, timeout=timeout)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)[:200]}
+    return {"ok": r.returncode == 0, "returncode": r.returncode,
+            "stdout": (r.stdout or "")[-4000:], "stderr": (r.stderr or "")[-2000:]}
+
+
+@app.get("/api/tiktok/state")
+async def tiktok_state() -> dict:
+    """Is TikTok live, which account, and is the overlay tunnel healthy?"""
+    r = await asyncio.to_thread(_tiktok_run, ["livestudio_live.py", "status", "--json"], 60)
+    state = {}
+    for line in (r.get("stdout") or "").splitlines():
+        line = line.strip()
+        if line.startswith("{") and line.endswith("}"):
+            try:
+                state = json.loads(line)
+            except Exception:  # noqa: BLE001
+                pass
+    # tunnel/shim health, read from the shim's own state file
+    shim = {"url": None, "token": None}
+    sf = TIKTOK_DIR / "tiktok-overlays.json"
+    if sf.is_file():
+        try:
+            d = json.loads(sf.read_text(encoding="utf-8"))
+            shim = {"url": d.get("url"), "token": d.get("token")}
+        except Exception:  # noqa: BLE001
+            pass
+    return {"ok": r.get("ok", False), "live": state, "overlays": shim,
+            "error": r.get("error") or (None if r.get("ok") else (r.get("stderr") or "")[-300:])}
+
+
+@app.post("/api/tiktok/live")
+async def tiktok_live(body: dict) -> dict:
+    """Arm or start the TikTok live via LIVE Studio's own UI.
+
+    action=panel  -> open the pre-live panel and stop (safe)
+    action=start  -> open the panel; presses broadcast ONLY when confirm is true
+    action=stop   -> end the live (confirm required, same rule)
+    """
+    action = str(body.get("action") or "panel").lower()
+    confirm = bool(body.get("confirm"))
+    wait = int(body.get("wait") or 60)
+    if action in ("start", "stop"):
+        args = ["livestudio_live.py", "start" if action == "start" else "stop"]
+        if confirm:
+            args.append("--confirm")
+        args += ["--wait", str(wait)]
+    elif action == "panel":
+        args = ["livestudio_live.py", "panel"]
+    elif action == "status":
+        return await tiktok_state()
+    else:
+        raise HTTPException(400, f"unknown action {action}")
+    r = await asyncio.to_thread(_tiktok_run, args, wait + 90)
+    await HUB.to_controls({"kind": "tiktok", "action": action, "ok": r.get("ok")})
+    return r
+
+
+@app.post("/api/tiktok/prep")
+async def tiktok_prep(body: dict | None = None) -> dict:
+    """Bring up overlay server + shim + tunnel and repoint the Link sources."""
+    pages = (body or {}).get("pages") or "chat,alerts,topic,goals"
+    ps = TIKTOK_DIR / "start-tiktok-overlays.ps1"
+    if not ps.is_file():
+        return {"ok": False, "error": f"missing {ps}"}
+    try:
+        r = await asyncio.to_thread(
+            _sp.run,
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ps),
+             "-Pages", pages],
+            capture_output=True, text=True, timeout=300)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)[:200]}
+    return {"ok": r.returncode == 0, "stdout": (r.stdout or "")[-3000:],
+            "stderr": (r.stderr or "")[-1500:]}
 
 
 # ------------------------------------------------------------------ deadlock panel

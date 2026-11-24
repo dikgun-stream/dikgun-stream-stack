@@ -26,7 +26,10 @@ param(
     [ValidateSet('stream', 'dev')]
     [string]$Mode = 'stream',
     [switch]$Restore,
-    [switch]$DryRun
+    [switch]$DryRun,
+    # TikTok goes out through TikTok LIVE Studio, which needs the read-only shim
+    # and a tunnel for its overlay Link sources. On by default in stream mode.
+    [switch]$NoTikTok
 )
 
 $ErrorActionPreference = 'Stop'
@@ -117,6 +120,10 @@ $DOCK_EXE = 'C:\Program Files (x86)\Stream Dock AJAZZ Global\Stream Dock AJAZZ.e
 $SB_EXE = "$env:USERPROFILE\Apps\Streamer.bot\Streamer.bot.exe"
 $DSH_EXE = "$env:LOCALAPPDATA\Programs\DeepSeek Harness\DeepSeek Harness.exe"
 $DASH_URL = 'http://127.0.0.1:7475/'
+# TikTok LIVE Studio integration (see C:\Users\JR\rev\livestudio\README.md)
+$TIKTOK_DIR = 'C:\Users\JR\rev\livestudio'
+$LS_EXE = 'C:\Program Files\TikTok LIVE Studio\1.40.2\TikTok LIVE Studio.exe'
+$lsPred = { param($p) $p.ProcessName -eq 'TikTok LIVE Studio' }
 $CHAT_URL = 'http://127.0.0.1:7475/chatroom'
 
 # ------------------------------------------------------------------- primitives
@@ -288,6 +295,28 @@ if ($Restore) {
     Set-TaskbarAutohide (-not $wantAutohide)
     Set-TaskbarAutohide ($wantAutohide)     # settle to the recorded value
     Set-DesktopIcons $wantIcons
+
+    # Tear down the TikTok overlay tunnel: the tunnel URL is public, so leaving it
+    # running after a stream is not something to do by accident. LIVE Studio and
+    # the overlay server are left alone -- only the public path is removed.
+    if (-not $NoTikTok) {
+        $stopped = @()
+        foreach ($name in @('cloudflared')) {
+            Get-Process -Name $name -ErrorAction SilentlyContinue | ForEach-Object {
+                if ($DryRun) { Write-Log "DRY   would stop $name (pid $($_.Id))" }
+                else { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue; $stopped += $name }
+            }
+        }
+        # the shim is a python process; match it by command line
+        Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -and $_.CommandLine -like '*public_shim.py*' } |
+            ForEach-Object {
+                if ($DryRun) { Write-Log "DRY   would stop the overlay shim (pid $($_.ProcessId))" }
+                else { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; $stopped += 'shim' }
+            }
+        if ($stopped) { Write-Log ("tiktok tunnel torn down: " + ($stopped -join ', ')) }
+        else { Write-Log 'tiktok tunnel: nothing running' }
+    }
     if (-not $DryRun -and (Test-Path $StatePath)) { Remove-Item $StatePath -Force }
     Write-Log ("restored: autohide={0} iconsVisible={1}" -f $wantAutohide, $wantIcons)
     if ($script:Warnings.Count) { Write-Log ("warnings: " + ($script:Warnings -join '; ')) }
@@ -354,6 +383,33 @@ if (-not (Test-Port -Port 7475)) {
     Write-Log 'dashboard server already listening'
 }
 
+# --- 2b. TikTok overlay pipeline (shim + tunnel + repoint LIVE Studio sources)
+# LIVE Studio's Link sources need a public HTTPS URL, so the overlay server is
+# fronted by the read-only shim and a cloudflared tunnel. The tunnel hostname
+# changes every run, so the script also rewrites the URLs inside LIVE Studio.
+# Failures here must never stop the OBS side of a stream from coming up.
+if ($Mode -eq 'stream' -and -not $NoTikTok) {
+    $prep = Join-Path $TIKTOK_DIR 'start-tiktok-overlays.ps1'
+    if (Test-Path $prep) {
+        if ($DryRun) {
+            Write-Log "DRY   would run $prep (TikTok overlays: shim + tunnel + repoint)"
+        } else {
+            Write-Log 'TikTok overlays: starting shim + tunnel ...'
+            try {
+                $out = & powershell -NoProfile -ExecutionPolicy Bypass -File $prep 2>&1
+                $url = ($out | Select-String -Pattern 'https://[a-z0-9-]+\.trycloudflare\.com' |
+                        Select-Object -First 1)
+                if ($url) { Write-Log "TikTok overlays ready: $($url.Matches[0].Value)" }
+                else { Warn 'TikTok overlay prep produced no tunnel URL' }
+            } catch {
+                Warn "TikTok overlay prep failed: $($_.Exception.Message)"
+            }
+        }
+    } else {
+        Warn "TikTok prep script missing: $prep"
+    }
+}
+
 # --- 3. launch apps
 $obsPred  = { param($p) $p.ProcessName -eq 'obs64' }
 $dockPred = { param($p) $p.ProcessName -like 'Stream Dock AJAZZ*' }
@@ -390,6 +446,16 @@ foreach ($b in $browserJobs) {
             '--disable-features=Translate', '--disable-session-crashed-bubble'
         ) | Out-Null
         Write-Log "START $($b.Key) browser"
+    }
+}
+
+if ($Mode -eq 'stream' -and -not $NoTikTok) {
+    # TikTok LIVE Studio is the TikTok encoder; the overlays reach it as Link
+    # sources pointing at the tunnel the step above just created.
+    if (Test-Path $LS_EXE) {
+        Start-IfNeeded -Label 'TikTok LIVE Studio' -Exe $LS_EXE -Predicate $lsPred
+    } else {
+        Warn "TikTok LIVE Studio not found at $LS_EXE"
     }
 }
 
@@ -480,6 +546,12 @@ $keepProcs = @('explorer','ShellExperienceHost','SearchHost','TextInputHost',
                # would silently break follow alerts. Remove this line if you
                # want it closed with everything else.
                'Streamer.bot')
+if ($Mode -eq 'stream' -and -not $NoTikTok) {
+    # TikTok LIVE Studio is the TikTok encoder and cloudflared carries its
+    # overlays; closing either mid-setup leaves TikTok with a blank canvas or
+    # dead Link sources.
+    $keepProcs += @('TikTok LIVE Studio', 'cloudflared')
+}
 $keepHandles = @($obsH, $dashH, $chatH, $dockH) | Where-Object { $_ -ne [IntPtr]::Zero }
 if ($Mode -eq 'dev') {
     $keepHandles += @($sbH, $dshH) | Where-Object { $_ -ne [IntPtr]::Zero }
@@ -499,7 +571,8 @@ $ancestors = @(Get-AncestorPids) + $PID
 $servicePatterns = @(
     'uvicorn\s+server:app',
     'server\.py',
-    'discord-bot[\\/]bot\.py'
+    'discord-bot[\\/]bot\.py',
+    'public_shim\.py'
 )
 $servicePids = @()
 try {

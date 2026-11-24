@@ -39,6 +39,7 @@ scenes switches the logic with no extra input.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import subprocess
 import tempfile
@@ -428,6 +429,26 @@ class AutoClipper:
             out = self._out_path(path, len(pend["hits"]))
             ok = self._trim(path, out, start, end)
             if ok:
+                # Front-load what we already know: kill offsets inside the trimmed
+                # clip. Writing them here means the promo pipeline (and any future
+                # scan) never has to re-detect them from scratch.
+                try:
+                    starts = [buf - (saved_at - k) for k in pend["hits"]]
+                    span = max(0.0, end - start)
+                    offsets = sorted({round(x - start, 2) for x in starts
+                                      if 0.0 <= (x - start) <= span})
+                    side = {
+                        "game": getattr(self, "game", None),
+                        "kills": offsets,
+                        "duration": round(span, 2),
+                        "captured": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                        "source": "replaybuffer",
+                        "raw": os.path.basename(str(path)),
+                    }
+                    out.with_suffix(".json").write_text(
+                        json.dumps(side, indent=2), encoding="utf-8")
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("sidecar write failed: %s", exc)
                 rec = {"path": str(out), "kills": len(pend["hits"]),
                        "start": start, "end": round(end - start, 2),
                        "at": time.strftime("%H:%M:%S")}

@@ -1,7 +1,8 @@
 # Deck button helper. One entry point so each .bat is a one-liner.
 param(
     [Parameter(Mandatory)][ValidateSet('golive', 'stop', 'panic', 'mic', 'hint', 'dashboard', 'chat',
-                                      'kill', 'assist', 'damage', 'dlreset')]
+                                      'kill', 'assist', 'damage', 'dlreset',
+                                      'tiktok', 'tiktokgo', 'tiktokstop', 'tiktokstate')]
     [string]$Action
 )
 
@@ -31,6 +32,17 @@ try {
 
         'dashboard' { }
         'chat'      { }
+
+        # TikTok LIVE goes out through TikTok LIVE Studio (its own encoder), so
+        # these hit the server's /api/tiktok/* endpoints, which drive the app over
+        # CDP. 'tiktok' only opens the pre-live panel and is safe to press by
+        # accident; 'tiktokgo' is the one that actually broadcasts.
+        'tiktok'      { Post '/api/tiktok/live' '{"action":"panel"}' }
+        'tiktokgo'    { Post '/api/tiktok/live' '{"action":"start","confirm":true}' }
+        'tiktokstop'  { Post '/api/tiktok/live' '{"action":"stop","confirm":true}' }
+        'tiktokstate' { $r = Invoke-RestMethod -Uri "$base/api/tiktok/state" -TimeoutSec 30
+                        Write-Host ("  tiktok liveStatus={0} room={1} overlays={2}" -f `
+                            $r.live.liveStatus, $r.live.roomId, $r.overlays.url) }
 
         # Deadlock panel counters -- manual on purpose: the game exposes no
         # passive feed for kills/assists/damage, so the streamer taps these.
