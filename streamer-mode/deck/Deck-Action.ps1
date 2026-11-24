@@ -2,7 +2,7 @@
 param(
     [Parameter(Mandatory)][ValidateSet('golive', 'stop', 'panic', 'mic', 'hint', 'dashboard', 'chat',
                                       'kill', 'assist', 'damage', 'dlreset',
-                                      'tiktok', 'tiktokgo', 'tiktokstop', 'tiktokstate')]
+                                      'tiktok', 'tiktokgo', 'tiktokstop', 'tiktokstate', 'prep', 'streamall')]
     [string]$Action
 )
 
@@ -17,8 +17,14 @@ function Post([string]$path, [string]$body = '{}') {
 
 try {
     switch ($Action) {
-        'golive' { Post '/api/live' '{"action":"start"}' }
-        'stop'   { Post '/api/live' '{"action":"stop"}' }
+        # GO LIVE (homogenised): the server brings up the relay, the overlay
+        # tunnel and LIVE Studio's feeds first, then starts Twitch + both YouTube
+        # canvases + both TikTok feeds, and finally ARMS TikTok's pre-live panel
+        # without broadcasting. 'tiktokgo' is the key that actually goes live there.
+        'golive'    { Post '/api/live' '{"action":"start","prep":true,"tiktok":true}' }
+        'streamall' { Post '/api/live' '{"action":"start","prep":true,"tiktok":true}' }
+        'stop'      { Post '/api/live' '{"action":"stop","prep":false}' }
+        'prep'      { Post '/api/prep' }
         'panic'  { Post '/api/panic' }
         'hint'   { Post '/api/hints/reveal' }
 

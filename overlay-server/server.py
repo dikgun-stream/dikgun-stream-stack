@@ -19,6 +19,8 @@ import asyncio
 import json
 import logging
 import os
+import re
+import subprocess
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -1307,6 +1309,12 @@ async def obs_visibility(body: VisibilityIn) -> dict:
 class StreamInfoIn(BaseModel):
     title: str | None = None
     game: str | None = None
+    # everything below is editable from the dashboard too, so one save updates
+    # the scene (topic card), the platform metadata and the TikTok title at once
+    topic_text: str | None = None
+    topic_label: str | None = None
+    tiktok_title: str | None = None
+    tags: list[str] | None = None
 
 
 class AudioSetIn(BaseModel):
@@ -1352,6 +1360,9 @@ async def get_stream_info() -> dict:
         "title": CONFIG["stream"]["title"],
         "game": CONFIG["stream"]["game"],
         "topic": CONFIG["topic"]["text"],
+        "topic_label": CONFIG["topic"].get("label"),
+        "tiktok_title": CONFIG["stream"].get("tiktok_title"),
+        "tags": CONFIG["stream"].get("tags") or [],
         "streamerbot": _sb_reachable(),
     }
 
@@ -1369,8 +1380,26 @@ async def set_stream_info(body: StreamInfoIn) -> dict:
         CONFIG["stream"]["title"] = body.title
     if body.game is not None:
         CONFIG["stream"]["game"] = body.game
+    if body.tiktok_title is not None:
+        CONFIG["stream"]["tiktok_title"] = body.tiktok_title
+    if body.tags is not None:
+        CONFIG["stream"]["tags"] = body.tags
+    topic_changed = False
+    if body.topic_text is not None:
+        CONFIG["topic"]["text"] = body.topic_text
+        topic_changed = True
+    if body.topic_label is not None:
+        CONFIG["topic"]["label"] = body.topic_label
+        topic_changed = True
     save_config(CONFIG)
     await _fanout_config()
+    if topic_changed:
+        # the topic card on the overlay follows the dashboard immediately
+        event = {"kind": "event", "type": "topic", "channel": "topic",
+                 "user": CONFIG["topic"].get("label"),
+                 "message": CONFIG["topic"]["text"], "ts": time.time()}
+        await HUB.to_overlays("topic", event)
+        await HUB.to_controls({**event, "source": "stream-info"})
 
     result: dict = {"ok": True, "title": CONFIG["stream"]["title"],
                     "game": CONFIG["stream"]["game"], "delivered": []}
@@ -1492,9 +1521,120 @@ async def set_topic(body: TopicIn) -> dict:
     return {"ok": True, "delivered": delivered}
 
 
+# ------------------------------------------------------- homogenised go-live (relay)
+# TikTok receives OBS's rendered canvases through the local relay. That means a
+# go-live has three more preconditions than it used to: the relay must be up, the
+# read-only shim + tunnel must be up (the overlays and the feed player are served
+# through them), and LIVE Studio's source URLs must point at the current tunnel.
+TIKTOK_DIR = Path(r"C:\Users\JR\rev\livestudio")
+MEDIAMTX_DIR = TIKTOK_DIR / "tools" / "mediamtx"
+MEDIAMTX_EXE = MEDIAMTX_DIR / "mediamtx.exe"
+
+
+def _port_open(port: int, host: str = "127.0.0.1") -> bool:
+    import socket
+    try:
+        with socket.create_connection((host, port), timeout=0.6):
+            return True
+    except OSError:
+        return False
+
+
+def _ensure_relay() -> dict:
+    """Make sure the RTMP/WebRTC relay is running (it is what feeds LIVE Studio)."""
+    if _port_open(1935):
+        return {"ok": True, "already": True}
+    if not MEDIAMTX_EXE.is_file():
+        return {"ok": False, "error": f"relay binary missing: {MEDIAMTX_EXE}"}
+    try:
+        subprocess.Popen(
+            [str(MEDIAMTX_EXE)], cwd=str(MEDIAMTX_DIR),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)[:200]}
+    deadline = time.time() + 12
+    while time.time() < deadline:
+        if _port_open(1935):
+            return {"ok": True, "started": True}
+        time.sleep(0.4)
+    return {"ok": False, "error": "relay did not open :1935"}
+
+
+def _ensure_tiktok_pipeline(repoint: bool = True) -> dict:
+    """Bring up shim + tunnel, then repoint LIVE Studio's sources at it."""
+    out: dict = {"steps": []}
+    prep = TIKTOK_DIR / "start-tiktok-overlays.ps1"
+    if not _port_open(7480):
+        if not prep.is_file():
+            out["steps"].append(f"missing {prep}")
+            return out
+        try:
+            r = subprocess.run(
+                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(prep)],
+                cwd=str(TIKTOK_DIR), capture_output=True, text=True, timeout=240,
+            )
+            out["steps"].append(f"overlay prep rc={r.returncode}")
+            m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", (r.stdout or "") + (r.stderr or ""))
+            if m:
+                out["tunnel"] = m.group(0)
+        except Exception as exc:  # noqa: BLE001
+            out["steps"].append(f"overlay prep failed: {str(exc)[:160]}")
+    else:
+        out["steps"].append("shim already listening on :7480")
+
+    if repoint:
+        feeds = TIKTOK_DIR / "livestudio_feed.py"
+        py = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Python" / "Python312" / "python.exe"
+        if feeds.is_file():
+            try:
+                r2 = subprocess.run(
+                    [str(py) if py.is_file() else "python", "livestudio_feed.py"],
+                    cwd=str(TIKTOK_DIR), capture_output=True, text=True, timeout=180,
+                )
+                out["steps"].append(f"feed repoint rc={r2.returncode}")
+                out["feed_out"] = (r2.stdout or "")[-600:]
+            except Exception as exc:  # noqa: BLE001
+                out["steps"].append(f"feed repoint failed: {str(exc)[:160]}")
+    return out
+
+
+@app.post("/api/prep")
+async def prep_pipeline() -> dict:
+    """Bring the TikTok delivery pipeline up WITHOUT going live.
+
+    Relay + read-only shim + tunnel + repointed LIVE Studio sources. Safe to run
+    any time; the deck's go-live calls the same helpers itself.
+    """
+    relay = await asyncio.to_thread(_ensure_relay)
+    pipe = await asyncio.to_thread(_ensure_tiktok_pipeline, True)
+    return {"ok": bool(relay.get("ok")), "relay": relay, "pipeline": pipe}
+
+
+@app.get("/api/relay/state")
+async def relay_state() -> dict:
+    """Relay health plus which paths OBS is currently publishing."""
+    st = {"rtmp": _port_open(1935), "webrtc": _port_open(8889),
+          "hls": _port_open(8888), "paths": []}
+    if st["webrtc"]:
+        try:
+            import urllib.request
+            with urllib.request.urlopen("http://127.0.0.1:9997/v3/paths/list", timeout=3) as r:
+                data = json.loads(r.read().decode())
+            for it in data.get("items") or []:
+                st["paths"].append({"name": it.get("name"), "ready": it.get("ready"),
+                                    "tracks": len(it.get("tracks") or [])})
+        except Exception:  # noqa: BLE001
+            pass
+    return st
+
+
 class LiveIn(BaseModel):
     action: str = "start"          # start | stop
     dryRun: bool = False
+    prep: bool = True              # bring up relay + shim/tunnel and repoint feeds
+    tiktok: bool = False           # also arm the TikTok pre-live panel
 
 
 @app.post("/api/live")
@@ -1527,11 +1667,33 @@ async def live_control(body: LiveIn) -> dict:
         else "vertical hotkey NOT available"
     )
 
+    if body.prep and start:
+        plan.append("ensure relay (mediamtx) + shim/tunnel + repoint LIVE Studio feeds")
+    if body.tiktok and start:
+        plan.append("arm TikTok pre-live panel (no broadcast)")
+
     if body.dryRun:
         return {"ok": True, "dryRun": True, "action": body.action,
                 "verticalHotkeyAvailable": have_vertical, "plan": plan}
 
     results = []
+    preflight: dict = {}
+    if body.prep:
+        try:
+            relay = await asyncio.to_thread(_ensure_relay) if start else {"ok": _port_open(1935)}
+            preflight["relay"] = relay
+            results.append(f"relay {'ok' if relay.get('ok') else 'FAILED'}")
+        except Exception as exc:  # noqa: BLE001
+            preflight["relay"] = {"ok": False, "error": str(exc)[:200]}
+            results.append("relay preflight failed")
+        if start:
+            try:
+                pipe = await asyncio.to_thread(_ensure_tiktok_pipeline, True)
+                preflight["pipeline"] = pipe
+                results.extend(pipe.get("steps") or [])
+            except Exception as exc:  # noqa: BLE001
+                preflight["pipeline"] = {"error": str(exc)[:200]}
+                results.append("pipeline preflight failed")
     try:
         await OBS.request("StartStream" if start else "StopStream")
         results.append("native stream ok")
@@ -1545,8 +1707,18 @@ async def live_control(body: LiveIn) -> dict:
         except RuntimeError as exc:
             results.append(f"vertical failed: {exc}")
 
-    await HUB.to_controls({"kind": "live", "action": body.action, "results": results})
-    return {"ok": True, "action": body.action, "results": results, "plan": plan}
+    if body.tiktok and start:
+        try:
+            arm = await asyncio.to_thread(_tiktok_run, ["livestudio_live.py", "panel"], 120)
+            results.append("tiktok armed" if arm.get("ok") else "tiktok arm failed")
+            preflight["tiktok"] = {"ok": arm.get("ok"), "out": (arm.get("stdout") or "")[-300:]}
+        except Exception as exc:  # noqa: BLE001
+            results.append(f"tiktok arm error: {str(exc)[:120]}")
+
+    await HUB.to_controls({"kind": "live", "action": body.action,
+                           "results": results, "preflight": preflight})
+    return {"ok": True, "action": body.action, "results": results,
+            "plan": plan, "preflight": preflight}
 
 
 class HintRevealIn(BaseModel):

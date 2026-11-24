@@ -125,7 +125,7 @@ SCENE_LABELS = {
 
 # page 2: (row, col) -> (label, sublabel, colour, script)
 ADMIN = [
-    ("GO\nLIVE",     "all",      RED,    rf"{DECK}\go-live.bat"),
+    ("GO\nLIVE",     "all+tt",   RED,    rf"{DECK}\go-live.bat"),
     ("STOP",         "live",     RED,    rf"{DECK}\stop-live.bat"),
     ("PANIC",        "mic+brb",  RED,    rf"{DECK}\panic.bat"),
     ("MIC",          "toggle",   AMBER,  rf"{DECK}\mic-toggle.bat"),
@@ -135,6 +135,12 @@ ADMIN = [
     ("STREAM\nMODE", "clean",    VIOLET, rf"{DECK}\stream-mode.bat"),
     ("DEV\nMODE",    "tiled",    VIOLET, rf"{DECK}\dev-mode.bat"),
     ("RESTORE",      "desktop",  PINK,   rf"{DECK}\restore.bat"),
+    # TikTok delivery: PREP brings up the relay + tunnel + LIVE Studio feeds
+    # without going live; TIKTOK arms the pre-live panel; TIKTOK GO broadcasts.
+    ("PREP",         "pipeline", VIOLET, rf"{DECK}\prep.bat"),
+    ("TIKTOK",       "arm",      BLUE,   rf"{DECK}\tiktok.bat"),
+    ("TIKTOK\nGO",   "broadcast", RED,   rf"{DECK}\tiktok-go.bat"),
+    ("TIKTOK\nSTOP", "end",      RED,    rf"{DECK}\tiktok-stop.bat"),
 ]
 
 

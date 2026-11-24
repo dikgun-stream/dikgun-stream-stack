@@ -230,31 +230,51 @@
     <div class="cols">
       <div>
         <div class="panel" style="margin-bottom:18px">
-          <h2>Stream info</h2>
+          <h2>Stream data</h2>
           <div class="row"><div style="flex:1"><label>Title</label>
             <input id="siTitle" placeholder="stream title"></div></div>
           <div class="row"><div style="flex:1"><label>Game / category</label>
             <input id="siGame" placeholder="type to search Twitch categories…" autocomplete="off"></div></div>
           <div id="catResults" style="margin:-4px 0 8px"></div>
+          <div class="row"><div style="flex:1"><label>TikTok title</label>
+            <input id="siTiktok" placeholder="what LIVE Studio's Go Live panel should say"></div></div>
+          <div class="row"><div style="flex:1"><label>Tags (comma separated)</label>
+            <input id="siTags" placeholder="deadlock, ranked, zero ping"></div></div>
           <div class="row">
-            <button class="primary" id="siSave">Update both platforms</button>
+            <div style="width:170px"><label>Now playing — label</label>
+              <input id="siTopicLabel" value="Now Playing"></div>
+            <div style="flex:1"><label>Now playing — text</label>
+              <input id="siTopic" placeholder="e.g. Tarkov — Reserve, PvP"></div>
+          </div>
+          <div class="row">
+            <button class="primary" id="siSave">Save stream data</button>
+            <button id="siPushTopic">Push card now</button>
             <span class="hint" id="siStatus" style="align-self:center"></span>
           </div>
           <div class="hint" id="catPicked" style="margin-top:6px"></div>
-          <div class="hint">Pick from the list — the category must match Twitch's own name exactly, or you land in no bucket at all. Routed through Streamer.bot so one click hits Twitch and YouTube.</div>
+          <div class="hint">One source of truth: title + game go to Twitch and YouTube through Streamer.bot,
+            the now-playing text drives the stream card, and the TikTok title is what you put in LIVE Studio's
+            Go Live panel.</div>
         </div>
 
         <div class="panel">
-          <h2>Topic card</h2>
+          <h2>Live control</h2>
           <div class="row">
-            <div style="width:160px"><label>Label</label><input id="tpLabel" value="Now Playing"></div>
-            <div style="flex:1"><label>Text</label>
-              <input id="tpText" placeholder="e.g. Tarkov — Reserve, PvP"></div>
+            <button class="primary" id="lcPrep">Prepare pipeline</button>
+            <button class="primary" id="lcGo">Go live — all outputs</button>
+            <button class="danger" id="lcStop">Stop everything</button>
           </div>
           <div class="row">
-            <button class="primary" id="tpSend">Show on stream</button>
-            <button id="tpClear">Clear</button>
+            <button id="lcTtArm">TikTok — arm</button>
+            <button class="primary" id="lcTtGo">TikTok — go</button>
+            <button class="danger" id="lcTtStop">TikTok — stop</button>
           </div>
+          <div class="hint" id="lcStatus" style="min-height:34px"></div>
+          <div class="hint">Go live brings up the relay, the overlay tunnel and LIVE Studio's feeds, then starts
+            Twitch + both YouTube canvases + both TikTok feeds. TikTok itself only opens its pre-live panel —
+            press TikTok — go when you actually want the TikTok broadcast up.</div>
+        </div>
+      </div>
         </div>
 
         <div class="panel" style="margin-top:18px">
@@ -645,11 +665,83 @@ async function loadAdmin() {
     const info = await api('/api/stream/info');
     $('siTitle').value = info.title || '';
     $('siGame').value = info.game || '';
+    $('siTiktok').value = info.tiktok_title || '';
+    $('siTags').value = (info.tags || []).join(', ');
+    $('siTopic').value = info.topic || '';
+    $('siTopicLabel').value = info.topic_label || 'Now Playing';
     $('siStatus').textContent = info.streamerbot ? 'Streamer.bot reachable' : 'Streamer.bot HTTP server off';
     $('siStatus').style.color = info.streamerbot ? 'var(--accent)' : 'var(--amber)';
   } catch (e) { log(`✗ stream info: ${e.message}`, 'err'); }
+  loadRelay();
   loadAudio();
   loadHints();
+}
+
+// ------------------------------------------------------- stream data + live control
+async function loadRelay() {
+  try {
+    const r = await api('/api/relay/state');
+    const paths = (r.paths || []).map(p => `${p.name}:${p.ready ? 'live' : 'idle'}`).join('  ') || 'no publish yet';
+    $('lcStatus').textContent =
+      `relay rtmp=${r.rtmp ? 'up' : 'down'} webrtc=${r.webrtc ? 'up' : 'down'} | ${paths}`;
+    $('lcStatus').style.color = r.rtmp && r.webrtc ? 'var(--muted)' : 'var(--amber)';
+  } catch (e) { $('lcStatus').textContent = `relay state: ${e.message}`; }
+}
+
+async function saveStreamData() {
+  const body = {
+    title: $('siTitle').value.trim(),
+    game: $('siGame').value.trim(),
+    tiktok_title: $('siTiktok').value.trim(),
+    tags: $('siTags').value.split(',').map(t => t.trim()).filter(Boolean),
+    topic_text: $('siTopic').value.trim(),
+    topic_label: $('siTopicLabel').value.trim() || 'Now Playing',
+  };
+  try {
+    const r = await api('/api/stream/info', {method: 'POST', body: JSON.stringify(body)});
+    $('siStatus').textContent = r.ok ? 'Saved — platforms + overlay updated'
+                                     : 'Saved locally; Streamer.bot is down';
+    $('siStatus').style.color = r.ok ? 'var(--accent)' : 'var(--amber)';
+    log('stream data saved', 'ok');
+  } catch (e) { $('siStatus').textContent = `Save failed: ${e.message}`; }
+}
+
+async function pushTopic() {
+  try {
+    await api('/api/topic', {method: 'POST', body: JSON.stringify({
+      text: $('siTopic').value.trim(),
+      label: $('siTopicLabel').value.trim() || 'Now Playing'})});
+    log('topic card pushed', 'ok');
+  } catch (e) { log(`✗ topic: ${e.message}`, 'err'); }
+}
+
+async function liveControl(which) {
+  const set = (m, c) => { $('lcStatus').textContent = m; $('lcStatus').style.color = c || 'var(--muted)'; };
+  try {
+    if (which === 'prep') {
+      set('preparing relay + tunnel + feeds…');
+      const r = await api('/api/prep', {method: 'POST'});
+      set(`prepared: relay=${r.relay && r.relay.ok ? 'up' : 'failed'} ` +
+          (r.pipeline && r.pipeline.steps ? r.pipeline.steps.join('; ') : ''));
+    } else if (which === 'go') {
+      set('starting all outputs…');
+      const r = await api('/api/live', {method: 'POST', body: JSON.stringify(
+        {action: 'start', prep: true, tiktok: true})});
+      set((r.results || []).join(' | '));
+    } else if (which === 'stop') {
+      set('stopping…');
+      const r = await api('/api/live', {method: 'POST', body: JSON.stringify({action: 'stop', prep: false})});
+      set((r.results || []).join(' | '));
+    } else {
+      const act = which === 'tarm' ? 'panel' : which === 'tgo' ? 'start' : 'stop';
+      const body = {action: act};
+      if (act !== 'panel') body.confirm = true;
+      set(`tiktok ${act}…`);
+      const r = await api('/api/tiktok/live', {method: 'POST', body: JSON.stringify(body)});
+      set(r.ok ? `tiktok ${act}: ok` : `tiktok ${act}: failed`);
+    }
+    loadRelay();
+  } catch (e) { set(`failed: ${e.message}`, 'var(--red)'); }
 }
 
 async function loadAudio() {
@@ -748,37 +840,19 @@ $('siGame').addEventListener('input', () => {
   }, 250);
 });
 
+// Save uses the exact Twitch category name when one was picked from the search.
 $('siSave').onclick = async () => {
-  $('siStatus').textContent = 'sending…';
-  // Prefer the exact Twitch name from the picked result; otherwise send what was typed.
-  const game = pickedGame ? pickedGame.name : $('siGame').value;
-  try {
-    const r = await api('/api/stream/info', {method:'POST',
-      body: JSON.stringify({title: $('siTitle').value, game})});
-    if (r.ok) {
-      $('siStatus').textContent = 'updated';
-      log(`stream info updated: "${r.title}" / ${r.game}`, 'ok');
-    } else {
-      $('siStatus').textContent = 'not sent';
-      log(`✗ ${r.hint || 'failed'}`, 'err');
-    }
-  } catch (e) { $('siStatus').textContent = 'error'; log(`✗ ${e.message}`, 'err'); }
+  if (pickedGame) $('siGame').value = pickedGame.name;
+  await saveStreamData();
 };
+$('siPushTopic').onclick = pushTopic;
 
-$('tpSend').onclick = async () => {
-  try {
-    const r = await api('/api/topic', {method:'POST',
-      body: JSON.stringify({label: $('tpLabel').value, text: $('tpText').value})});
-    log(`topic shown -> ${r.delivered} overlay(s)`, 'ok');
-  } catch (e) { log(`✗ topic: ${e.message}`, 'err'); }
-};
-$('tpClear').onclick = async () => {
-  $('tpText').value = '';
-  try {
-    await api('/api/topic', {method:'POST', body: JSON.stringify({label: $('tpLabel').value, text: ''})});
-    log('topic cleared', 'info');
-  } catch (e) { log(`✗ ${e.message}`, 'err'); }
-};
+$('lcPrep').onclick = () => liveControl('prep');
+$('lcGo').onclick = () => liveControl('go');
+$('lcStop').onclick = () => liveControl('stop');
+$('lcTtArm').onclick = () => liveControl('tarm');
+$('lcTtGo').onclick = () => liveControl('tgo');
+$('lcTtStop').onclick = () => liveControl('tstop');
 
 $('panicBtn').onclick = async () => {
   try {

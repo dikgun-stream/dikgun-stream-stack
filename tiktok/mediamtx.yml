@@ -1,0 +1,21 @@
+# Minimal relay for the OBS -> TikTok LIVE Studio feed.
+# OBS publishes RTMP in; LIVE Studio plays it as WebRTC (WHEP), with HLS as fallback.
+logLevel: info
+rtmp: yes
+rtmpAddress: :1935
+hls: yes
+hlsAddress: :8888
+hlsAlwaysRemux: yes
+hlsVariant: mpegts
+hlsSegmentCount: 3
+hlsSegmentDuration: 0.5s
+webrtc: yes
+webrtcAddress: :8889
+webrtcAllowOrigin: '*'
+webrtcICEServers2: []
+api: yes
+apiAddress: :9997
+srt: no
+paths:
+  all_others:
+
