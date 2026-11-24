@@ -29,7 +29,9 @@ param(
     [switch]$DryRun,
     # TikTok goes out through TikTok LIVE Studio, which needs the read-only shim
     # and a tunnel for its overlay Link sources. On by default in stream mode.
-    [switch]$NoTikTok
+    [switch]$NoTikTok,
+    # keep the LIVE Studio window visible instead of minimising it
+    [switch]$ShowTikTok
 )
 
 $ErrorActionPreference = 'Stop'
@@ -471,6 +473,10 @@ Start-IfNeeded -Label 'Streamer.bot' -Exe $SB_EXE -Predicate $sbPred
 # --- 4. tile
 $obsH = Wait-WindowHandle -Predicate $obsPred -TimeoutSec 45
 $dockH = Wait-WindowHandle -Predicate $dockPred -TimeoutSec 30
+$lsH = [IntPtr]::Zero
+if ($Mode -eq 'stream' -and -not $NoTikTok) {
+    $lsH = Wait-WindowHandle -Predicate $lsPred -TimeoutSec 30
+}
 
 function Get-BrowserWindow([string]$profileLeaf) {
     # In a dry run we never launched it, so do not sit here waiting for one.
@@ -515,6 +521,15 @@ $colX = $HISENSE.X + $OBS_MIN_W          # 3161
 $colW = $HISENSE.W - $OBS_MIN_W          # 679
 Place-Window $dashH $colX $HISENSE.Y              $colW 360 'dashboard'
 Place-Window $chatH $colX ($HISENSE.Y + 360)      $colW 360 'chat'
+
+# TikTok LIVE Studio is the TikTok encoder and nothing more in this workflow:
+# our deck keys and the overlay server drive it. Minimise it so it never takes a
+# slot in the layout (pass -ShowTikTok to keep it visible).
+if ($lsH -ne [IntPtr]::Zero) {
+    if ($DryRun) { Write-Log 'DRY   would minimise TikTok LIVE Studio' }
+    elseif ($ShowTikTok) { Write-Log 'SHOW  TikTok LIVE Studio (kept visible)' }
+    else { [void][W]::ShowWindow($lsH, 6); Write-Log 'MIN   TikTok LIVE Studio' }
+}
 
 # Stream Dock's 1202x832 floor makes it impossible to tile beside OBS, and it is
 # a control surface rather than something you watch. Minimise it instead.
