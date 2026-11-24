@@ -67,46 +67,77 @@ def _fetch(path: str, timeout: float = 15.0) -> tuple[int, str, bytes]:
 FEED_HTML = """<!doctype html><html><head><meta charset="utf-8">
 <style>html,body{margin:0;padding:0;height:100%;background:#000;overflow:hidden}
 video{width:100%;height:100%;object-fit:fill;display:block}
-/* fill, not contain: LIVE Studio forces browser elements to its own viewport
-   (1080x1032), so the player fills that box and TL scales the box non-uniformly
-   back out to the full canvas - the two distortions cancel exactly. */
 #err{position:fixed;left:0;top:0;color:#f66;font:12px monospace;padding:6px;background:#0008}</style>
-</head><body><video id="v" autoplay muted playsinline></video>
+</head><body><video id="v" autoplay playsinline></video>
+<script src="/hlsjs"></script>
 <script>
-const P = new URLSearchParams(location.search).get('path') || 'portrait';
-const v = document.getElementById('v');
-function fail(m){ let e=document.getElementById('err'); if(!e){e=document.createElement('div');e.id='err';document.body.appendChild(e);} e.textContent='feed: '+m; beacon('err:' + m.slice(0,60)); }
-async function play(){
-  const pc = new RTCPeerConnection({iceServers: []});
-  pc.ontrack = (ev) => { if (!v.srcObject) v.srcObject = ev.streams[0]; };
-  pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed') fail('connection failed'); };
-  pc.addTransceiver('video', {direction: 'recvonly'});
-  pc.addTransceiver('audio', {direction: 'recvonly'});
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  await new Promise((res) => {
-    if (pc.iceGatheringState === 'complete') return res();
-    pc.addEventListener('icegatheringstatechange', () => { if (pc.iceGatheringState === 'complete') res(); });
-    setTimeout(res, 2000);
-  });
-  const r = await fetch('/whep/' + encodeURIComponent(P) + '/whep',
-                        {method: 'POST', headers: {'Content-Type': 'application/sdp'},
-                         body: pc.localDescription.sdp});
-  if (!r.ok) throw new Error('whep ' + r.status + ' ' + (await r.text()).slice(0, 120));
-  await pc.setRemoteDescription({type: 'answer', sdp: await r.text()});
-}
+// HLS, not WebRTC: mediamtx refuses H264 with B-frames (OBS NVENC emits them) and
+// WebRTC drops the AAC audio track. HLS carries both, and its muxers run anyway.
+var P = new URLSearchParams(location.search).get('path') || 'portrait';
+var v = document.getElementById('v');
 function beacon(extra) {
   var q = 'path=' + encodeURIComponent(P) + '&w=' + innerWidth + '&h=' + innerHeight +
           '&rtc=' + (typeof RTCPeerConnection === 'function' ? 1 : 0) +
           '&mse=' + (typeof MediaSource === 'function' ? 1 : 0) +
-          '&st=' + (extra || 'ok');
+          '&st=' + encodeURIComponent(extra || 'ok');
   try { fetch('/viewport?' + q, {cache:'no-store'}); } catch (e) {}
 }
+function fail(m) {
+  var e = document.getElementById('err');
+  if (!e) { e = document.createElement('div'); e.id = 'err'; document.body.appendChild(e); }
+  e.textContent = 'feed: ' + m;
+  beacon('err:' + m);
+}
 beacon('boot');
-play().catch((e) => fail(e.message));
-setInterval(() => { if (v.readyState < 2) play().catch(() => {}); }, 5000);
+
+function playAudio() {
+  v.muted = false;
+  var pr = v.play();
+  if (pr && pr.catch) pr.catch(function () { v.muted = true; v.play().catch(function () {}); });
+}
+
+if (!window.Hls) {
+  fail('hls.js did not load');
+} else if (Hls.isSupported()) {
+  var hls = new Hls({ liveDurationInfinity: true, lowLatencyMode: true, enableWorker: false });
+  hls.loadSource('/hls/' + P + '/index.m3u8');
+  hls.attachMedia(v);
+  hls.on(Hls.Events.MANIFEST_PARSED, function () { beacon('manifest'); playAudio(); });
+  hls.on(Hls.Events.FRAG_PLAYING, function () { beacon('playing'); });
+  hls.on(Hls.Events.ERROR, function (evt, data) {
+    if (data && data.fatal) {
+      beacon('hls:' + data.type + ':' + (data.details || ''));
+      try { hls.destroy(); } catch (e) {}
+      setTimeout(function () { location.reload(); }, 4000);
+    }
+  });
+} else if (v.canPlayType('application/vnd.apple.mpegurl')) {
+  v.src = '/hls/' + P + '/index.m3u8';
+  playAudio();
+} else {
+  fail('no HLS support');
+}
+
+// supervisor: reload if playback freezes (publisher restart, tunnel blip)
+var lastT = -1, stalled = 0;
+setInterval(function () {
+  var t = v.currentTime;
+  if (t === lastT) { stalled++; } else { stalled = 0; }
+  lastT = t;
+  if (stalled >= 6) { beacon('frozen-reload'); location.reload(); }
+}, 2000);
 </script></body></html>"""
 
+
+
+def _access(line: str) -> None:
+    try:
+        import time as _t
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "shim_access.log"),
+                  "a", encoding="utf-8") as fh:
+            fh.write(f"{_t.strftime('%H:%M:%S')}  {line}\n")
+    except Exception:  # noqa: BLE001
+        pass
 
 def _proxy_whep(path: str, body: bytes) -> tuple[int, str, bytes]:
     """Forward a WHEP offer to the local relay and return its answer."""
@@ -133,6 +164,7 @@ def make_app() -> FastAPI:
 
     @app.get("/viewport")
     async def viewport(path: str = "", w: int = 0, h: int = 0, rtc: int = -1, mse: int = -1, st: str = ""):
+        _access(f"VIEWPORT path={path} rtc={rtc} mse={mse} st={st[:60]}")
         """The player page reports its real browser viewport here.
 
         LIVE Studio renders Link sources in a CEF viewport that is smaller than
@@ -150,7 +182,8 @@ def make_app() -> FastAPI:
                     data = {}
             except Exception:  # noqa: BLE001
                 data = {}
-            data[path or "unknown"] = {"w": w, "h": h, "at": _time.time()}
+            data[path or "unknown"] = {"w": w, "h": h, "rtc": rtc, "mse": mse,
+                                       "st": (st or "")[:200], "at": _time.time()}
             with open(VIEWPORT_FILE, "w", encoding="utf-8") as fh:
                 _json.dump(data, fh)
         except Exception:  # noqa: BLE001
@@ -160,6 +193,7 @@ def make_app() -> FastAPI:
     @app.post("/whep/{path}/whep")
     async def whep(path: str, request: Request):
         body = await request.body()
+        _access(f"WHEP POST path={path} from={request.client.host if request.client else '?'} len={len(body)}")
         status, ctype, data = await asyncio.to_thread(_proxy_whep, path, body)
         return Response(content=data, media_type=ctype, status_code=status,
                         headers={"Access-Control-Allow-Origin": "*"})
@@ -176,6 +210,17 @@ def make_app() -> FastAPI:
                 return 204
         status = await asyncio.to_thread(do)
         return Response(status_code=status)
+
+    @app.get("/hlsjs")
+    async def hlsjs():
+        """hls.js, served from the shim so the feed page has no CDN dependency."""
+        import os as _os
+        path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "hls.min.js")
+        try:
+            with open(path, "rb") as fh:
+                return Response(content=fh.read(), media_type="text/javascript")
+        except Exception:  # noqa: BLE001
+            return Response(content=b"/* hls.js missing */", media_type="text/javascript")
 
     @app.get("/hls/{path}/{name}")
     async def hls(path: str, name: str):

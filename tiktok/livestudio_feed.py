@@ -155,7 +155,8 @@ def main(argv=None) -> int:
             print(f"  track {track}: no preview element found, skipping")
             continue
         path = PATHS[track]
-        url = f"{base.rstrip('/')}/o/{token}/feed?path={path}"
+        import time as _t
+        url = f"{base.rstrip('/')}/o/{token}/feed?path={path}&v={int(_t.time())}"
         name = f"{NAME} {path}"
         # replace either the legacy probe name or the readable name already there
         remove_named(name)
