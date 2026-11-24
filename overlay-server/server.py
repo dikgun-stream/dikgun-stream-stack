@@ -1835,7 +1835,7 @@ async def tiktok_state() -> dict:
     sf = TIKTOK_DIR / "tiktok-overlays.json"
     if sf.is_file():
         try:
-            d = json.loads(sf.read_text(encoding="utf-8"))
+            d = json.loads(sf.read_text(encoding="utf-8-sig"))
             shim = {"url": d.get("url"), "token": d.get("token")}
         except Exception:  # noqa: BLE001
             pass

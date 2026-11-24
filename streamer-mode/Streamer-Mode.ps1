@@ -424,7 +424,7 @@ $sbPred   = { param($p) $p.ProcessName -eq 'Streamer.bot' }
 $dshPred  = { param($p) $p.ProcessName -eq 'DeepSeek Harness' }
 
 Start-IfNeeded -Label 'OBS' -Exe $OBS_EXE -WorkDir $OBS_DIR `
-    -Arguments @('--profile', 'Untitled', '--collection', 'DikGun') -Predicate $obsPred
+    -Arguments @('--disable-shutdown-check', '--profile', 'Untitled', '--collection', 'DikGun') -Predicate $obsPred
 Start-IfNeeded -Label 'Stream Dock' -Exe $DOCK_EXE -Predicate $dockPred
 
 # browser tiles: separate profiles => separate processes => unambiguous handles

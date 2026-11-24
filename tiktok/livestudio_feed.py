@@ -48,7 +48,7 @@ VIEWPORT_FILE = Path(__file__).resolve().parent / "viewport_state.json"
 def reported_viewport(path: str) -> tuple[int, int] | None:
     """The page's real viewport inside LIVE Studio (reported by the page itself)."""
     try:
-        d = json.loads(VIEWPORT_FILE.read_text(encoding="utf-8"))
+        d = json.loads(VIEWPORT_FILE.read_text(encoding="utf-8-sig"))
         entry = d.get(path) if isinstance(d, dict) and path in d else None
         if entry is None and isinstance(d, dict) and d.get("path") == path:
             entry = d
@@ -136,7 +136,7 @@ def main(argv=None) -> int:
     state: dict = {}
     try:
         from pathlib import Path
-        state = json.loads(Path("tiktok-overlays.json").read_text(encoding="utf-8"))
+        state = json.loads(Path("tiktok-overlays.json").read_text(encoding="utf-8-sig"))
     except Exception:  # noqa: BLE001
         pass
     base = args.base or state.get("url")

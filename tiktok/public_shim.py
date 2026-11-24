@@ -75,7 +75,7 @@ video{width:100%;height:100%;object-fit:fill;display:block}
 <script>
 const P = new URLSearchParams(location.search).get('path') || 'portrait';
 const v = document.getElementById('v');
-function fail(m){ let e=document.getElementById('err'); if(!e){e=document.createElement('div');e.id='err';document.body.appendChild(e);} e.textContent='feed: '+m; }
+function fail(m){ let e=document.getElementById('err'); if(!e){e=document.createElement('div');e.id='err';document.body.appendChild(e);} e.textContent='feed: '+m; beacon('err:' + m.slice(0,60)); }
 async function play(){
   const pc = new RTCPeerConnection({iceServers: []});
   pc.ontrack = (ev) => { if (!v.srcObject) v.srcObject = ev.streams[0]; };
@@ -95,7 +95,14 @@ async function play(){
   if (!r.ok) throw new Error('whep ' + r.status + ' ' + (await r.text()).slice(0, 120));
   await pc.setRemoteDescription({type: 'answer', sdp: await r.text()});
 }
-try { fetch('/viewport?path=' + encodeURIComponent(P) + '&w=' + innerWidth + '&h=' + innerHeight, {cache:'no-store'}); } catch (e) {}
+function beacon(extra) {
+  var q = 'path=' + encodeURIComponent(P) + '&w=' + innerWidth + '&h=' + innerHeight +
+          '&rtc=' + (typeof RTCPeerConnection === 'function' ? 1 : 0) +
+          '&mse=' + (typeof MediaSource === 'function' ? 1 : 0) +
+          '&st=' + (extra || 'ok');
+  try { fetch('/viewport?' + q, {cache:'no-store'}); } catch (e) {}
+}
+beacon('boot');
 play().catch((e) => fail(e.message));
 setInterval(() => { if (v.readyState < 2) play().catch(() => {}); }, 5000);
 </script></body></html>"""
@@ -125,7 +132,7 @@ def make_app() -> FastAPI:
         return Response(content=FEED_HTML, media_type="text/html")
 
     @app.get("/viewport")
-    async def viewport(path: str = "", w: int = 0, h: int = 0):
+    async def viewport(path: str = "", w: int = 0, h: int = 0, rtc: int = -1, mse: int = -1, st: str = ""):
         """The player page reports its real browser viewport here.
 
         LIVE Studio renders Link sources in a CEF viewport that is smaller than
