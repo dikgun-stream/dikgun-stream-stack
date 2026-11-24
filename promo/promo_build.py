@@ -212,6 +212,33 @@ CACHE_DIR = HERE / "segcache"
 CACHE_TAG = "crf20-veryfast-g3"  # g3: glitch lengthened 4->8 frames, shift 10->16
 
 
+CARD_BG = "0x161412"       # brand ink, so the pads look deliberate
+
+
+def fit_card(src: Path, segdir: Path) -> Path:
+    """Scale a 16:9 card to fit 9:16 and pad on the ink colour.
+
+    Cropping a letter card to 9:16 would cut the DIKGUN word in half, so cards are
+    fitted (full width) and centred vertically instead. No-op in 16:9.
+    """
+    if (OUT_W, OUT_H) == (1920, 1080):
+        return src
+    out = segdir / f"{src.stem}_v{OUT_W}x{OUT_H}.mp4"
+    if out.is_file() and out.stat().st_mtime >= src.stat().st_mtime:
+        return out
+    subprocess.run([
+        FFMPEG, "-v", "error", "-y", "-i", str(src),
+        "-vf", (f"scale={OUT_W}:-2:flags=lanczos,"
+                f"pad={OUT_W}:{OUT_H}:(ow-iw)/2:(oh-ih)/2:color={CARD_BG},"
+                f"setsar=1,fps={OUT_FPS}"),
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+        "-shortest", "-movflags", "+faststart", str(out)],
+        check=True, timeout=600)
+    return out
+
+
 def stinger_seconds() -> float:
     """Duration of one stinger, from the rendered frame count.
 
@@ -786,6 +813,15 @@ def sync_kills(shots, accent_before, stinger_secs, beats_music, t0, tol,
 
 
 def build(args) -> int:
+    # Orientation is a module-level decision because extract(), the flash cards
+    # and the cache key all read it. The cache tag must change too, or a vertical
+    # build would silently reuse horizontal segments.
+    global OUT_W, OUT_H, CACHE_TAG
+    if getattr(args, "vertical", False):
+        OUT_W, OUT_H = 1080, 1920
+        CACHE_TAG = "crf20-veryfast-g3-v"
+        print(f"  VERTICAL {OUT_W}x{OUT_H} (9:16)")
+
     songs = getattr(args, "songs", "") or ""
     if songs:
         # --start is meaningless against a timeline that already begins at zero
@@ -1196,19 +1232,27 @@ def build(args) -> int:
         # which matches the measured reference edits anyway.
         if i in accent_before and args.mode == "promo":
             if stinger_files and n_sting < len(stinger_files):
-                listing_lines.append(f"file '{stinger_files[n_sting % len(stinger_files)].name}'")
+                card = fit_card(stinger_files[n_sting % len(stinger_files)], segdir)
+                listing_lines.append(f"file '{card.name}'")
                 n_sting += 1
             elif (i // flash_every) % 4 == 3:
-                listing_lines.append(f"file '{white.name}'")
+                listing_lines.append(f"file '{fit_card(white, segdir).name}'")
                 n_flash_w += 1
             else:
-                listing_lines.append(f"file '{black.name}'")
+                listing_lines.append(f"file '{fit_card(black, segdir).name}'")
                 n_flash_b += 1
         listing_lines.append(f"file '{p.name}'")
     if outro_secs:
-        outro_seg = segdir / "outro_seg.mp4"
+        suffix = "outro_seg.mp4" if (OUT_W, OUT_H) == (1920, 1080) else "outro_seg_v.mp4"
+        outro_seg = segdir / suffix
+        if (OUT_W, OUT_H) == (1920, 1080):
+            outro_vf = f"scale={OUT_W}:{OUT_H},setsar=1,fps={OUT_FPS}"
+        else:
+            outro_vf = (f"scale={OUT_W}:-2:flags=lanczos,"
+                        f"pad={OUT_W}:{OUT_H}:(ow-iw)/2:(oh-ih)/2:color={CARD_BG},"
+                        f"setsar=1,fps={OUT_FPS}")
         subprocess.run([FFMPEG, "-v", "error", "-y", "-i", outro_path,
-                        "-vf", f"scale={OUT_W}:{OUT_H},setsar=1,fps={OUT_FPS}",
+                        "-vf", outro_vf,
                         "-c:v", "libx264", "-preset", "veryfast", "-crf", "19",
                         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
                         "-ar", "48000", "-ac", "2", "-shortest",
@@ -1293,6 +1337,10 @@ def main() -> int:
                     help="render from a saved EDL instead of re-planning")
     ap.add_argument("--stinger-gap", type=float, default=4.0,
                     help="minimum seconds of gameplay between letter stingers")
+    ap.add_argument("--vertical", action="store_true",
+                    help="render 1080x1920 (9:16) for TikTok/Shorts: gameplay is "
+                         "centre-cropped, letter cards and the outro are fitted "
+                         "and padded on the brand ink instead of being squashed")
     ap.add_argument("--sync-tol", type=float, default=0.04,
                     help="how close a kill must land to an onset, seconds")
     ap.add_argument("--no-sync", action="store_true",

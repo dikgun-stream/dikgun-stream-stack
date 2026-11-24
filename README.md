@@ -375,9 +375,9 @@ powershell -File make-promo.ps1 -Music s.mp3 -Game all -Pin "Q:\Game Clips\BF6\C
 python promo_build.py --songs "black-sky.m4a|42|78; WUBS.opus|0|40" --duration 60 --games "Apex Legends"
 ```
 
-`promo_build.py` takes 17 flags: `--music --songs --out --games --duration --start --outro --save-edl --from-edl --stinger-gap --sync-tol --no-sync --no-cache --mode {promo,edit} --pin --prefer --dry-run`. `-Start` is where in the track the video begins — for **Black Sky** (262 s), `42` = build then drop, `78` = straight into the drop.
+`promo_build.py` takes 18 flags: `--music --songs --out --games --duration --start --outro --save-edl --from-edl --vertical --stinger-gap --sync-tol --no-sync --no-cache --mode {promo,edit} --pin --prefer --dry-run`. `-Start` is where in the track the video begins — for **Black Sky** (262 s), `42` = build then drop, `78` = straight into the drop.
 
-**(e) Limits.** **Outro beats are hand-set** (`0.30, 2.00`) and sit ~80–120 ms off the actual kicks. **`--prefer` starves the wide rotation** — R6 and Deadlock get very little when Battlefield 6 is favoured across five games. **Deadlock repeats after ~60 s** (10 kill windows). **Tarkov cannot drive a beat-synced cut.** `--pin` does **not** validate `src_end` against file length. **A 9:16 vertical export was never built.** `-Game` must be one comma-separated string (`PositionalBinding = $false`). Audio glitches after upload were traced to `-c copy` concat leaving duplicate AAC timestamps — fixed with `aresample=async=1:first_pts=0` + `-avoid_negative_ts make_zero`.
+**(e) Limits.** **Outro beats are hand-set** (`0.30, 2.00`) and sit ~80–120 ms off the actual kicks. **`--prefer` starves the wide rotation** — R6 and Deadlock get very little when Battlefield 6 is favoured across five games. **Deadlock repeats after ~60 s** (10 kill windows). **Tarkov cannot drive a beat-synced cut.** `--pin` does **not** validate `src_end` against file length. **9:16 is supported** via `--vertical` (gameplay centre-cropped; cards fitted on ink). `-Game` must be one comma-separated string (`PositionalBinding = $false`). Audio glitches after upload were traced to `-c copy` concat leaving duplicate AAC timestamps — fixed with `aresample=async=1:first_pts=0` + `-avoid_negative_ts make_zero`.
 
 ---
 
@@ -495,9 +495,9 @@ Vertical (11, on the Aitum canvas): `Vertical Scene`, `V_GAME_Apex`, `V_GAME_Dea
 | 1 | **YouTube OAuth route** | `GET /oauth/youtube/callback` was never implemented. Superseded in practice by Innertube (`yt_chat.py`), so official chat is not needed |
 | 2 | **YouTube viewer API key** | Still required (`youtube.videoId` + `viewers.youtubeApiKey`); no unauthenticated path for unlisted live streams |
 | 3 | **BF6 / The Finals live templates** | Auto-clipping only has a live template for Apex (Deadlock reuses `find_kill_badge`) |
-| 4 | **9:16 vertical promo export** | Never built — promos are 16:9 only |
+| 4 | ~~**9:16 vertical promo export**~~ | **FIXED** — `--vertical` renders 1080×1920: gameplay is centre-cropped, letter cards and the outro are fitted and padded on the brand ink so the DIKGUN word is never cut. Verified 1080×1920, cards padded (top-band std 1.63 vs 18–50 for gameplay), horizontal output unchanged |
 | 5 | **Outro beats hand-set** | `0.30, 2.00` hardcoded, ~80–120 ms off the actual kicks |
-| 6 | **TikTok** | Blocked / not supported (no publishing path) |
+| 6 | **TikTok live** | Not blocked, but manual per session: Aitum Multistream takes a TikTok RTMP key (1080×1920, H264, 60 fps, CBR 8000 kbps, keyframe 2 s) which **expires every session** and must be pasted in the Aitum dock; Multistream exposes no start/stop hotkey, so it is one click, not part of `/api/live`. Alternative: OBS Virtual Camera → TikTok Live Studio (video only; give Live Studio the mic and desktop audio directly or you get doubled audio) |
 | 7 | **Auto-clip not live-tested** | Validated on recorded footage at real poll rate; never fired a real replay buffer |
 | 8 | **No betting / economy** | No points, currency or wagering system exists |
 | 9 | **`--prefer` starves the rotation** | R6/Deadlock get little when BF6 is favoured across five games |

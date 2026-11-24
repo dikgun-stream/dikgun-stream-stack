@@ -22,7 +22,7 @@ The strategy is: **the machine makes the clips, you spend your time on the words
 
 | Platform | Job | Content | CTA |
 |---|---|---|---|
-| **TikTok** | Reach. Volume. New eyes. | Raw 9:16 kill clips, 12–45 s, hook in the first 1.5 s. Vertical VOD/auto-clips are already 9:16 — post them *without* re-cropping | On-screen handle + "live every [day/time] on Twitch". No clickable links (until you have 1k followers / bio link) |
+| **TikTok** | Reach. Volume. New eyes. | Raw 9:16 kill clips, 12–45 s, hook in the first 1.5 s. Vertical VOD/auto-clips are already 9:16, and `--vertical` now produces branded 9:16 promos too | On-screen handle + "live every [day/time] on Twitch". No clickable links (until you have 1k followers / bio link) |
 | **YouTube** | Search + longevity. Two lanes: **Shorts** (same clips as TikTok) and the **main channel** (full promos, highlight compilations, VOD highlights, stream recaps) | Shorts: same clips. Main: promos as hero uploads; clips compiled per game ("The Best of Apex — Week 1") | Description line 1: Twitch link + schedule. Pinned comment asking a question |
 | **X** | Identity and conversation. This is where "engagement" actually happens for a streamer | 2–3 posts/day: one clip, one text post (opinion/question/poll), one reply-storm participation. The dashboard's polls become X polls | Link in bio, not in the post (X punishes link-posts) |
 
@@ -78,7 +78,7 @@ One clip goes everywhere — but **never the same caption**. TikTok gets the ene
 
 Ranked by how much time it returns:
 
-1. **9:16 export in `promo_build.py`** (`--vertical`): render the same cut cropped to 1080×1920 for Shorts/TikTok. The vertical Aitum recordings are already 9:16, so this is for *branded* promo cutdowns. Until then: raw clips to short-form, promos to YouTube main only.
+1. ~~**9:16 export in `promo_build.py`**~~ **DONE** — `--vertical` renders 1080×1920 with cards padded on the ink. Branded promos can now go to TikTok/Shorts directly (`make-promo.ps1 -Vertical`).
 2. **Auto-clip → auto-index:** write auto-clip sidecars into the scanner indexes (open item #19) so a session's clips are postable the same day without a rescan.
 3. **Scheduled uploads via APIs:** YouTube Data API uploads are fully automatable (the `youtube` config already exists for viewers). X API v2 posting works with their keys. **TikTok's Content Posting API requires an approved developer application — not automatable yet; posting there stays manual** unless you win approval.
 4. **Clip review queue:** a dashboard page listing today's auto-clips with a one-click "post this" → which writes the caption file for the upload step. The editing is solved; the *choosing* is the remaining bottleneck.

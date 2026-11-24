@@ -28,6 +28,7 @@ param(
     [string]$Prefer = "",
     [string]$Pin = "",
     [ValidateSet('promo', 'edit')][string]$Mode = 'promo',
+    [switch]$Vertical,
     [double]$StingerGap = 4.0,
     [double]$SyncTol = 0.04,
     [switch]$NoSync,
@@ -111,6 +112,7 @@ if ($Outro) {
     $args += @('--outro', $Outro)
 }
 if ($FromEdl -and -not (Test-Path $FromEdl)) { throw "EDL not found: $FromEdl" }
+if ($Vertical) { $args += '--vertical' }
 $args += @('--stinger-gap', $StingerGap)
 $args += @('--sync-tol', $SyncTol)
 if ($NoSync) { $args += '--no-sync' }
