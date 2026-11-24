@@ -190,9 +190,14 @@ def main(argv=None) -> int:
         else:
             ow = float(own.get("cx") or canvas[track][0])
             oh = float(own.get("cy") or canvas[track][1])
-        sx = pv["w"] / ow
-        sy = pv["h"] / oh
-        obj = {"transform": {"translateX": 0, "translateY": 0, "rotateAngle": 0,
+        # Cover a hair more than the canvas. Exact fitting left a 3px seam on
+        # every edge (LIVE Studio rounds its internal preview), which the app
+        # draws as a visible gap around the selected source.
+        OVERS = 1.012
+        sx = (pv["w"] * OVERS) / ow
+        sy = (pv["h"] * OVERS) / oh
+        obj = {"transform": {"translateX": -(pv["w"] * (OVERS - 1) / 2),
+                             "translateY": -(pv["h"] * (OVERS - 1) / 2), "rotateAngle": 0,
                              "scaleX": sx, "scaleY": sy, "flipH": False, "flipV": False,
                              "size": {"cx": ow, "cy": oh},
                              "preview_cx": pv["w"], "preview_cy": pv["h"]},
