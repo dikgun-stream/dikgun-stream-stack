@@ -557,3 +557,32 @@ Also flagged: `duration()` silently returns 0.0 on probe failure (garbage window
 | `discord-bot/` README / SETUP / WALKTHROUGH | bot provisioning and commands |
 | `streamdeck/README.md` | deck install |
 | `brand/README.md` | art generation |
+
+---
+
+## 16. OBS dock layout corruption (Aitum dock stuck at 0,0)
+
+**Symptom:** OBS opens with a dock (typically the Aitum Multistream dock) pinned to the
+top-left corner, immovable and impossible to close.
+
+**Cause:** OBS serialises the ENTIRE dock layout as one base64 blob called `DockState`
+under `[BasicWindow]` in `%APPDATA%\obs-studio\user.ini`. Qt writes that blob on a
+clean exit. If `obs64.exe` is force-killed (Stop-Process / taskkill /F, or a crash),
+the blob can end up inconsistent with the window geometry and OBS clamps docks to
+0,0 without letting you drag them.
+
+**Fix (OBS closed):**
+
+```powershell
+$ini = "$env:APPDATA\obs-studio\user.ini"
+Copy-Item $ini "$ini.bak-docks"
+(Get-Content $ini) | Where-Object { $_ -notmatch '^\s*DockState\s*=' } | Set-Content $ini
+```
+
+Reopen OBS: it rebuilds a default, sane dock layout on start. The per-window
+`geometry` keys are untouched, so the OBS window still lands on the Hisense at the
+same size. `DocksLocked=false` in the same section means docks can be dragged.
+
+**Prevention:** close OBS gracefully. `streamer-mode/Streamer-Mode.ps1` already uses
+`CloseMainWindow()`; never `Stop-Process -Force` on obs64 when you can avoid it.
+In-app equivalent: **View -> Docks -> Reset UI**.
