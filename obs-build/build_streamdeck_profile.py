@@ -2,9 +2,10 @@
 """
 Regenerate the DikGun StreamDock profile as TWO pages.
 
-Page 1 - scenes + OBS output toggles (unchanged), plus a page-change key.
-Page 2 - admin panel: go live, panic, mic, hint jar, dashboard/chat windows,
-          streamer mode / dev mode, restore.
+Page 1 - PRIMARY controls: go live, stop, prep, stream mode, panic, mic, hint,
+         dashboard/chat, the TikTok arm/go/stop trio, plus LIVE/REC/CLIP.
+Page 2 - scenes + the rest: Tarkov/Deadlock/Apex + show scenes, VCAM/NEXT/PREV,
+         STATS, dev mode, restore.
 
 StreamDock's page model (learned from the existing profiles):
     <parent>.sdProfile/manifest.json          -> page 1 actions + Pages list
@@ -123,56 +124,54 @@ SCENE_LABELS = {
     "SHOW_Ending": "ENDING",
 }
 
-# page 2: (row, col) -> (label, sublabel, colour, script)
-ADMIN = [
-    ("GO\nLIVE",     "all+tt",   RED,    rf"{DECK}\go-live.exe"),
-    ("STOP",         "live",     RED,    rf"{DECK}\stop-live.exe"),
-    ("PANIC",        "mic+brb",  RED,    rf"{DECK}\panic.exe"),
-    ("MIC",          "toggle",   AMBER,  rf"{DECK}\mic-toggle.exe"),
-    ("HINT",         "reveal",   GREEN,  rf"{DECK}\hint.exe"),
-    ("DASH",         "open",     BLUE,   rf"{DECK}\dashboard.exe"),
-    ("CHAT",         "open",     BLUE,   rf"{DECK}\chat.exe"),
-    ("STREAM\nMODE", "clean",    VIOLET, rf"{DECK}\stream-mode.exe"),
-    ("DEV\nMODE",    "tiled",    VIOLET, rf"{DECK}\dev-mode.exe"),
-    ("RESTORE",      "desktop",  PINK,   rf"{DECK}\restore.exe"),
+# page 1 (PRIMARY): the buttons you press every session.
+# The scripts are the .bat wrappers - the carrier that has always worked.
+PRIMARY = [
+    ("GO\nLIVE",     "all+tt",   RED,    rf"{DECK}\go-live.bat"),
+    ("STOP",         "live",     RED,    rf"{DECK}\stop-live.bat"),
+    ("PREP",         "pipeline", VIOLET, rf"{DECK}\prep.bat"),
+    ("STREAM\nMODE", "clean",    VIOLET, rf"{DECK}\stream-mode.bat"),
+    ("PANIC",        "mic+brb",  RED,    rf"{DECK}\panic.bat"),
+    ("MIC",          "toggle",   AMBER,  rf"{DECK}\mic-toggle.bat"),
+    ("HINT",         "reveal",   GREEN,  rf"{DECK}\hint.bat"),
+    ("DASH",         "open",     BLUE,   rf"{DECK}\dashboard.bat"),
+    ("CHAT",         "open",     BLUE,   rf"{DECK}\chat.bat"),
     # TikTok delivery: PREP brings up the relay + tunnel + LIVE Studio feeds
     # without going live; TIKTOK arms the pre-live panel; TIKTOK GO broadcasts.
-    ("PREP",         "pipeline", VIOLET, rf"{DECK}\prep.exe"),
-    ("TIKTOK",       "arm",      BLUE,   rf"{DECK}\tiktok.exe"),
-    ("TIKTOK\nGO",   "broadcast", RED,   rf"{DECK}\tiktok-go.exe"),
-    ("TIKTOK\nSTOP", "end",      RED,    rf"{DECK}\tiktok-stop.exe"),
+    ("TIKTOK",       "arm",      BLUE,   rf"{DECK}\tiktok.bat"),
+    ("TIKTOK\nGO",   "broadcast", RED,   rf"{DECK}\tiktok-go.bat"),
+    ("TIKTOK\nSTOP", "end",      RED,    rf"{DECK}\tiktok-stop.bat"),
+]
+
+# page 2 leftovers
+EXTRAS = [
+    ("DEV\nMODE",    "tiled",    VIOLET, rf"{DECK}\dev-mode.bat"),
+    ("RESTORE",      "desktop",  PINK,   rf"{DECK}\restore.bat"),
 ]
 
 
 def build_page1(images: Path, page_id: str, page2_id: str) -> dict:
+    """Page 1: the primary controls."""
     actions = {}
-    idx = 0
 
-    def place(img, label, sub, colour, uuid_str, settings, states=1, key=None):
-        nonlocal idx
-        if key is None:
-            r, c = divmod(idx, 3)
-            key = f"{r},{c}"
-            idx += 1
+    def place(img, label, sub, colour, uuid_str, settings, key, states=1):
         icon(images / img, label, sub, colour)
         actions[key] = act(label.replace("\n", " "), uuid_str, img, settings, states)
 
-    for i, scene in enumerate(SCENES):
-        label = SCENE_LABELS[scene]
-        place(f"scene_{i}.png", label, "scene",
-              GREEN, "com.hotspot.streamdock.system.hotkey", hotkey_action(VK_F13 + i))
+    for i, (label, sub, colour, script) in enumerate(PRIMARY):
+        r, c = divmod(i, 3)
+        place(f"admin_{i}.png", label, sub, colour,
+              "com.hotspot.streamdock.system.open", {"path": script}, f"{r},{c}")
 
-    place("obs_stream.png", "LIVE", "toggle", RED, "com.gabilan.obs.studio.action3", {}, 2)
-    place("obs_record.png", "REC", "toggle", RED, "com.gabilan.obs.studio.action1", {}, 2)
-    place("obs_replay.png", "CLIP", "replay", AMBER, "com.gabilan.obs.studio.action26", {}, 2)
-    place("obs_vcam.png", "VCAM", "toggle", BLUE, "com.gabilan.obs.studio.action17", {}, 2)
-    place("obs_next.png", "NEXT", "scene", BLUE, "com.gabilan.obs.studio.action22", {}, 2)
-    place("obs_prev.png", "PREV", "scene", BLUE, "com.gabilan.obs.studio.action23", {}, 2)
-    place("obs_stats.png", "STATS", "obs", VIOLET, "com.gabilan.obs.studio.action34", {}, 2)
+    # LIVE / REC / CLIP close out row 4
+    place("obs_stream.png", "LIVE", "toggle", RED, "com.gabilan.obs.studio.action3", {}, "4,0", 2)
+    place("obs_record.png", "REC", "toggle", RED, "com.gabilan.obs.studio.action1", {}, "4,1", 2)
+    place("obs_replay.png", "CLIP", "replay", AMBER, "com.gabilan.obs.studio.action26", {}, "4,2", 2)
 
-    # page-change to the admin page
-    place("page_next.png", "ADMIN", "page 2", AMBER,
-          "com.hotspot.streamdock.page.change", {}, key="5,1")
+    icon(images / "page_ind.png", "1/2", "", BLUE)
+    actions["5,0"] = act("1/2", "com.hotspot.streamdock.page.indicator", "page_ind.png", {})
+    icon(images / "page_next.png", "SCENES", "page 2", AMBER)
+    actions["5,1"] = act("SCENES", "com.hotspot.streamdock.page.change", "page_next.png", {})
 
     return {
         "Actions": actions,
@@ -185,25 +184,36 @@ def build_page1(images: Path, page_id: str, page2_id: str) -> dict:
 
 
 def build_page2(images: Path) -> dict:
+    """Page 2: scenes plus the secondary OBS keys, dev mode and restore."""
     actions = {}
-    for i, (label, sub, colour, script) in enumerate(ADMIN):
-        r, c = divmod(i, 3)
-        img = f"admin_{i}.png"
+
+    def place(img, label, sub, colour, uuid_str, settings, key, states=1):
         icon(images / img, label, sub, colour)
-        actions[f"{r},{c}"] = act(label.replace("\n", " "),
-                                  "com.hotspot.streamdock.system.open",
-                                  img, {"path": script})
+        actions[key] = act(label.replace("\n", " "), uuid_str, img, settings, states)
+
+    for i, scene in enumerate(SCENES):
+        r, c = divmod(i, 3)
+        place(f"scene_{i}.png", SCENE_LABELS[scene], "scene", GREEN,
+              "com.hotspot.streamdock.system.hotkey", hotkey_action(VK_F13 + i), f"{r},{c}")
+
+    place("obs_vcam.png", "VCAM", "toggle", BLUE, "com.gabilan.obs.studio.action17", {}, "3,0", 2)
+    place("obs_next.png", "NEXT", "scene", BLUE, "com.gabilan.obs.studio.action22", {}, "3,1", 2)
+    place("obs_prev.png", "PREV", "scene", BLUE, "com.gabilan.obs.studio.action23", {}, "3,2", 2)
+    place("obs_stats.png", "STATS", "obs", VIOLET, "com.gabilan.obs.studio.action34", {}, "4,0", 2)
+    place("admin_12.png", "DEV\nMODE", "tiled", VIOLET,
+          "com.hotspot.streamdock.system.open", {"path": EXTRAS[0][3]}, "4,1")
+    place("admin_13.png", "RESTORE", "desktop", PINK,
+          "com.hotspot.streamdock.system.open", {"path": EXTRAS[1][3]}, "4,2")
 
     icon(images / "page_ind.png", "2/2", "", BLUE)
     actions["5,0"] = act("2/2", "com.hotspot.streamdock.page.indicator", "page_ind.png", {})
-
     icon(images / "page_prev.png", "BACK", "page 1", AMBER)
     actions["5,1"] = act("BACK", "com.hotspot.streamdock.page.change", "page_prev.png", {})
 
     return {
         "Actions": actions,
         "DeviceModel": DEVICE_MODEL, "DeviceSerialNumber": DEVICE_SERIAL, "DeviceUUID": DEVICE_UUID,
-        "Name": f"{PROFILE_NAME} Admin",
+        "Name": f"{PROFILE_NAME} Scenes",
         "Version": "1.0",
     }
 
@@ -230,12 +240,15 @@ def main() -> int:
     print(f"page 1 : {len(p1['Actions'])} keys -> {parent}")
     print(f"page 2 : {len(p2['Actions'])} keys -> {page2_dir}")
     print()
-    print("page 1:")
+    print("page 1 (primary):")
     for k in sorted(p1["Actions"], key=lambda s: (int(s.split(',')[0]), int(s.split(',')[1]))):
-        print(f"   {k:5} {p1['Actions'][k]['Name']}")
-    print("page 2:")
+        a = p1["Actions"][k]
+        print(f"    {k}   {a['Name']}")
+    print()
+    print("page 2 (scenes):")
     for k in sorted(p2["Actions"], key=lambda s: (int(s.split(',')[0]), int(s.split(',')[1]))):
-        print(f"   {k:5} {p2['Actions'][k]['Name']}")
+        a = p2["Actions"][k]
+        print(f"    {k}   {a['Name']}")
     return 0
 
 

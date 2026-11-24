@@ -396,15 +396,20 @@ if ($Mode -eq 'stream' -and -not $NoTikTok) {
         if ($DryRun) {
             Write-Log "DRY   would run $prep (TikTok overlays: shim + tunnel + repoint)"
         } else {
-            Write-Log 'TikTok overlays: starting shim + tunnel ...'
+            Write-Log 'TikTok overlays: starting shim + tunnel (detached) ...'
+            # Run detached, never capture. The first version captured the child's
+            # output synchronously ($out = & powershell ... 2>&1); launched from a
+            # GUI parent with no console that pipe deadlocks and the whole stream
+            # mode hangs here forever. Detached + log files = unblockable.
             try {
-                $out = & powershell -NoProfile -ExecutionPolicy Bypass -File $prep 2>&1
-                $url = ($out | Select-String -Pattern 'https://[a-z0-9-]+\.trycloudflare\.com' |
-                        Select-Object -First 1)
-                if ($url) { Write-Log "TikTok overlays ready: $($url.Matches[0].Value)" }
-                else { Warn 'TikTok overlay prep produced no tunnel URL' }
+                Start-Process -FilePath 'powershell' `
+                    -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $prep `
+                    -WindowStyle Hidden `
+                    -RedirectStandardOutput (Join-Path $StateDir 'tiktok-prep.out.log') `
+                    -RedirectStandardError  (Join-Path $StateDir 'tiktok-prep.err.log')
+                Write-Log 'TikTok overlay prep launched in the background'
             } catch {
-                Warn "TikTok overlay prep failed: $($_.Exception.Message)"
+                Warn "TikTok overlay prep failed to launch: $($_.Exception.Message)"
             }
         }
     } else {

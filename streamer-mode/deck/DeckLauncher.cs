@@ -59,27 +59,37 @@ public class DeckLauncher
 
     public static void Main()
     {
-        string name = Path.GetFileNameWithoutExtension(Environment.GetCommandLineArgs()[0]);
-        string args = Args(name);
-        string temp = Path.GetTempPath();
-        if (args == null)
-        {
-            File.WriteAllText(temp + "deck-launcher-unknown.txt", name + " - no such action");
-            return;
-        }
+        string exePath = Environment.GetCommandLineArgs()[0];
+        string dir = "";
+        try { dir = Path.GetDirectoryName(exePath); } catch { }
+        string dbg = (dir.Length > 0 ? dir : Path.GetTempPath()) + "\\deck-launcher-debug.txt";
         try
         {
+            string name = Path.GetFileNameWithoutExtension(exePath);
+            string args = Args(name);
+            if (args == null)
+            {
+                File.WriteAllText(dbg, "name=" + name + " NO ACTION\n");
+                return;
+            }
             ProcessStartInfo psi = new ProcessStartInfo();
-            psi.FileName = @"C:\Program Files\PowerShell\7\pwsh.exe";
+            // Spawn through cmd with FILE redirection: pwsh hangs when it inherits
+            // NULL stdio handles from a GUI parent (no console), and pipe capture
+            // deadlocks. The redirected-files form is the one verified to work.
+            string pwsh = @"C:\Program Files\PowerShell\7\pwsh.exe";
+            string outLog = Path.GetTempPath() + "deck-launcher-" + name + ".out.log";
+            psi.FileName = Environment.ExpandEnvironmentVariables(@"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe");
             psi.Arguments = args;
             psi.UseShellExecute = false;
             psi.CreateNoWindow = true;
             psi.WindowStyle = ProcessWindowStyle.Hidden;
-            Process.Start(psi);
+            Process child = Process.Start(psi);
+            File.WriteAllText(dbg, "name=" + name + " pid=" + (child != null ? child.Id.ToString() : "null")
+                + " out=" + outLog + "\nargs=" + args);
         }
         catch (Exception ex)
         {
-            File.WriteAllText(temp + "deck-launcher-" + name + ".log", ex.ToString());
+            try { File.WriteAllText(dbg, "EXCEPTION " + ex.GetType().FullName + " " + ex.Message + "\n" + ex.StackTrace); } catch { }
         }
     }
 }
