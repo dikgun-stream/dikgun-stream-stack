@@ -125,22 +125,22 @@ SCENE_LABELS = {
 
 # page 2: (row, col) -> (label, sublabel, colour, script)
 ADMIN = [
-    ("GO\nLIVE",     "all+tt",   RED,    rf"{DECK}\go-live.bat"),
-    ("STOP",         "live",     RED,    rf"{DECK}\stop-live.bat"),
-    ("PANIC",        "mic+brb",  RED,    rf"{DECK}\panic.bat"),
-    ("MIC",          "toggle",   AMBER,  rf"{DECK}\mic-toggle.bat"),
-    ("HINT",         "reveal",   GREEN,  rf"{DECK}\hint.bat"),
-    ("DASH",         "open",     BLUE,   rf"{DECK}\dashboard.bat"),
-    ("CHAT",         "open",     BLUE,   rf"{DECK}\chat.bat"),
-    ("STREAM\nMODE", "clean",    VIOLET, rf"{DECK}\stream-mode.bat"),
-    ("DEV\nMODE",    "tiled",    VIOLET, rf"{DECK}\dev-mode.bat"),
-    ("RESTORE",      "desktop",  PINK,   rf"{DECK}\restore.bat"),
+    ("GO\nLIVE",     "all+tt",   RED,    rf"{DECK}\go-live.lnk"),
+    ("STOP",         "live",     RED,    rf"{DECK}\stop-live.lnk"),
+    ("PANIC",        "mic+brb",  RED,    rf"{DECK}\panic.lnk"),
+    ("MIC",          "toggle",   AMBER,  rf"{DECK}\mic-toggle.lnk"),
+    ("HINT",         "reveal",   GREEN,  rf"{DECK}\hint.lnk"),
+    ("DASH",         "open",     BLUE,   rf"{DECK}\dashboard.lnk"),
+    ("CHAT",         "open",     BLUE,   rf"{DECK}\chat.lnk"),
+    ("STREAM\nMODE", "clean",    VIOLET, rf"{DECK}\stream-mode.lnk"),
+    ("DEV\nMODE",    "tiled",    VIOLET, rf"{DECK}\dev-mode.lnk"),
+    ("RESTORE",      "desktop",  PINK,   rf"{DECK}\restore.lnk"),
     # TikTok delivery: PREP brings up the relay + tunnel + LIVE Studio feeds
     # without going live; TIKTOK arms the pre-live panel; TIKTOK GO broadcasts.
-    ("PREP",         "pipeline", VIOLET, rf"{DECK}\prep.bat"),
-    ("TIKTOK",       "arm",      BLUE,   rf"{DECK}\tiktok.bat"),
-    ("TIKTOK\nGO",   "broadcast", RED,   rf"{DECK}\tiktok-go.bat"),
-    ("TIKTOK\nSTOP", "end",      RED,    rf"{DECK}\tiktok-stop.bat"),
+    ("PREP",         "pipeline", VIOLET, rf"{DECK}\prep.lnk"),
+    ("TIKTOK",       "arm",      BLUE,   rf"{DECK}\tiktok.lnk"),
+    ("TIKTOK\nGO",   "broadcast", RED,   rf"{DECK}\tiktok-go.lnk"),
+    ("TIKTOK\nSTOP", "end",      RED,    rf"{DECK}\tiktok-stop.lnk"),
 ]
 
 
