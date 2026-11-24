@@ -33,6 +33,8 @@ import lsclient as ls
 S = ls.SERVICE
 NAME = "DSH FEED"
 PATHS = {0: "landscape", 1: "portrait"}
+# names the sources carry once created (readable in the LIVE Studio source list)
+FEED_NAMES = {0: "TikTok Landscape feed", 1: "TikTok Portrait feed"}
 
 
 def run(body: str, t: float = 60.0):
@@ -155,7 +157,9 @@ def main(argv=None) -> int:
         path = PATHS[track]
         url = f"{base.rstrip('/')}/o/{token}/feed?path={path}"
         name = f"{NAME} {path}"
-        remove_named(name)      # only this canvas's feed, never the other one
+        # replace either the legacy probe name or the readable name already there
+        remove_named(name)
+        remove_named(FEED_NAMES[track])
         desc = {"name": name, "type": "browser",
                 "payload": {"url": url,
                             "cx": canvas[track][0], "cy": canvas[track][1],
@@ -170,7 +174,12 @@ def main(argv=None) -> int:
         if not sid or not (added or {}).get("result"):
             print(f"  track {track}: add failed: {json.dumps(added)[:140]}")
             continue
-        cur = read_back(name) or {}
+        # updateSourceName is what actually renames a source; updateSource({name})
+        # fails with "reading 'url'"
+        rename_to = FEED_NAMES[track]
+        run(f"try{{ await {S}.source.updateSourceName({json.dumps(sid)}, {json.dumps(rename_to)});"
+            f" return 1; }}catch(e){{ return String(e&&e.message||e); }}")
+        cur = read_back(rename_to) or {}
         own = (cur.get("transform") or {}).get("size") or {}
         vp = reported_viewport(path)
         if vp:
