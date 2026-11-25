@@ -49,13 +49,13 @@ KIND_TO_TL = {"game_capture": "game", "dshow_input": "camera", "browser_source":
 def state() -> dict:
     p = HERE / "tiktok-overlays.json"
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        return json.loads(p.read_text(encoding="utf-8-sig"))
     except Exception:  # noqa: BLE001
         return {}
 
 
 def load_obs_scene(scene_name: str) -> dict:
-    data = json.loads(OBS_COLLECTION.read_text(encoding="utf-8"))
+    data = json.loads(OBS_COLLECTION.read_text(encoding="utf-8-sig"))
     by_uuid = {s.get("uuid"): s for s in data["sources"]}
     scene = next((s for s in data["sources"]
                   if s.get("id") == "scene" and s.get("name") == scene_name), None)
@@ -228,6 +228,14 @@ def apply_geometry(src_id: str, item: dict, canvas: tuple[int, int]) -> dict:
         return tx, ty, sx, sy
 
     tx, ty, sx, sy = to_preview(x, y, w, h, native_w, native_h)
+    # full-frame items get a 1.2% overscan: exact fitting leaves a 3px seam on
+    # every edge (LIVE Studio rounds its internal preview), drawn as a visible gap
+    if x == 0 and y == 0 and w == canvas_w and h == canvas_h and (cl, ct, cr, cb) == (0, 0, 0, 0):
+        OVERS = 1.012
+        sx *= OVERS
+        sy *= OVERS
+        tx -= pw * (OVERS - 1) / 2
+        ty -= ph * (OVERS - 1) / 2
     obj = {
         "transform": {
             "translateX": tx, "translateY": ty, "rotateAngle": 0,
@@ -260,6 +268,8 @@ def main(argv=None) -> int:
     ap.add_argument("--scene", default="V_GAME_Tarkov")
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--clean", action="store_true")
+    ap.add_argument("--with-camera", action="store_true",
+                    help="also clone the camera (OFF while OBS is streaming: the webcam is single-access)")
     args = ap.parse_args(argv)
 
     try:
@@ -284,13 +294,16 @@ def main(argv=None) -> int:
     if args.clean:
         before = existing_ids()
         r = ls.run(f"""const s = await {S}.source.getCurrentSceneSourceParamsSnapshot() || [];
-          const mine = s.filter(x => (x.name||'').startsWith({json.dumps(NAME_PREFIX)}));
+          // also retire the relay feed sources: this profile is the standalone
+          // clone you manage yourself, not the feed player
+          const mine = s.filter(x => (x.name||'').startsWith({json.dumps(NAME_PREFIX)})
+                                || /feed/i.test(x.name||''));
           let n = 0;
           for (const m of mine) {{
             try {{ await {S}.source.removeSource(m.id, m.track); n++; }} catch (e) {{}}
           }}
           return n;""")
-        print(f"  removed {r.get('value')} mirrored source(s)")
+        print(f"  removed {r.get('value')} source(s) (mirrored + feed players)")
         return 0
 
     scene = load_obs_scene(args.scene)
@@ -303,6 +316,10 @@ def main(argv=None) -> int:
 
     skipped = []
     for item in scene["items"]:
+        if item["kind"] == "dshow_input" and not args.with_camera:
+            print(f"    skip   camera {item['name'][:22]:24} (single-access device; OBS holds it while streaming - use --with-camera)")
+            skipped.append(item["name"])
+            continue
         desc = build_descriptor(item, base, token)
         if not desc:
             skipped.append(item["name"])
