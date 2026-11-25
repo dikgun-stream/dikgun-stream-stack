@@ -80,6 +80,7 @@ def load_obs_scene(scene_name: str) -> dict:
             "bounds": (bw, bh),
             "crop": (int(it.get("crop_left", 0)), int(it.get("crop_top", 0)),
                      int(it.get("crop_right", 0)), int(it.get("crop_bottom", 0))),
+            "visible": bool(it.get("visible", True)),
         })
     return {"name": scene_name, "items": items}
 
@@ -156,7 +157,10 @@ def build_descriptor(item: dict, base: str, token: str) -> dict | None:
                    "cx": page_w, "cy": page_h,
                    "enableAudio": False, "enableCustomResolution": False,
                    "zoom": 1}
-    return {"name": NAME_PREFIX + str(item["name"]), "type": tl_type, "payload": payload}
+    desc = {"name": NAME_PREFIX + str(item["name"]), "type": tl_type, "payload": payload}
+    if "visible" in item:
+        desc["visible"] = bool(item["visible"])
+    return desc
 
 
 def read_source(src_id: str) -> dict | None:
@@ -282,14 +286,26 @@ def refit_all() -> int:
             src = by_uuid.get(it.get("source_uuid")) or {}
             key = (str(it.get("name")), tuple(int(it.get(k, 0)) for k in
                    ("crop_left", "crop_top", "crop_right", "crop_bottom")))
+            bw, bh = float(it["bounds"]["x"]), float(it["bounds"]["y"])
+            if bw == 0 and bh == 0:
+                # OBS: bounds 0x0 means "source native size" - expand it the same
+                # way load_obs_scene does, or the refit computes a zero scale and
+                # the source collapses (this is why the whole landscape canvas
+                # went black: every landscape item has bounds 0x0 in OBS)
+                if src.get("id") == "game_capture":
+                    bw, bh = 1920, 1080
+                elif src.get("id") == "browser_source":
+                    bw = float((src.get("settings") or {}).get("width") or 1920)
+                    bh = float((src.get("settings") or {}).get("height") or 1080)
             items_by_key[key] = {
                 "name": it.get("name"),
                 "kind": src.get("id"),
                 "settings": src.get("settings") or {},
                 "pos": (float(it["pos"]["x"]), float(it["pos"]["y"])),
-                "bounds": (float(it["bounds"]["x"]), float(it["bounds"]["y"])),
+                "bounds": (bw, bh),
                 "crop": tuple(int(it.get(k, 0)) for k in
                               ("crop_left", "crop_top", "crop_right", "crop_bottom")),
+                "visible": bool(it.get("visible", True)),
             }
 
     r = ls.run(f"const s = await {S}.source.getCurrentSceneSourceParamsSnapshot() || [];"
