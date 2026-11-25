@@ -47,6 +47,19 @@ def main(argv=None) -> int:
     if args.with_camera:
         extra.append("--with-camera")
 
+    # LIVE Studio starts scene-less after a restart; addSource needs a scene.
+    # createScene(name, orientation='dual', select=true) creates + activates it
+    # (the select flag is the second argument - without it the scene is created
+    # but never becomes current). This is done ONCE here, not per mirror run.
+    import time
+    import lsclient as _ls
+    _S = _ls.SERVICE
+    made = _ls.run(f"try{{ const r = await {_S}.source.createScene("
+                   f"{{name: 'TikTok {args.game.title()}', orientation: 'dual'}}, true);"
+                   f" return 'ok ' + JSON.stringify(r); }}catch(e){{ return 'ERR ' + e.message; }}").get("value")
+    print(f"\n  scene: create+activate -> {made}")
+    time.sleep(3)
+
     rc = run(["livestudio_mirror.py", "--clean"])
     if rc:
         return rc
