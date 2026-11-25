@@ -225,10 +225,17 @@ def apply_geometry(src_id: str, item: dict, canvas: tuple[int, int]) -> dict:
     native_h = float(own.get("cy") or 1080)
 
     def to_preview(px, py, pw_, ph_, nw, nh):
-        tx = px / canvas_w * pw
-        ty = py / canvas_h * ph
-        sx = (pw_ / canvas_w * pw) / nw if nw else 0
-        sy = (ph_ / canvas_h * ph) / nh if nh else 0
+        # TL applies `clip` AFTER scaling, in screen space. So the scale must be
+        # derived from the CROPPED size, and the translate must shift by the
+        # cropped edge: without this a cropped capture renders at
+        # (native - crop)/native of its target width (observed: 56% width with
+        # black on the right for the 420/420 Tarkov band).
+        cw = max(1.0, nw - cl - cr)
+        ch = max(1.0, nh - ct - cb)
+        sx = (pw_ / canvas_w * pw) / cw
+        sy = (ph_ / canvas_h * ph) / ch
+        tx = px / canvas_w * pw - cl * sx
+        ty = py / canvas_h * ph - ct * sy
         return tx, ty, sx, sy
 
     tx, ty, sx, sy = to_preview(x, y, w, h, native_w, native_h)
