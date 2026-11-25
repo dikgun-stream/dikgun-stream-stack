@@ -70,6 +70,15 @@ def main(argv=None) -> int:
     if rc:
         return rc
 
+    # the window may still be settling while sources are created; a refit pass
+    # re-measures the live preview and fixes any source sized against a stale
+    # preview rect (observed: 216x384 vs the final 288x512 -> 76% width)
+    import time
+    time.sleep(3)
+    rc = run(["livestudio_mirror.py", "--refit"])
+    if rc:
+        return rc
+
     print("\n  done. LIVE Studio now has:")
     print(f"    landscape canvas: {landscape}  (game + overlays)")
     print(f"    portrait canvas : {portrait}  (game + overlays)")

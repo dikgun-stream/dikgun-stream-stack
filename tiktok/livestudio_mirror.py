@@ -263,6 +263,67 @@ def existing_ids() -> set[str]:
 canvas_w, canvas_h = 1920, 1080   # module-level so apply_geometry sees the active canvas
 
 
+def refit_all() -> int:
+    """Re-apply geometry to every mirrored source against the LIVE preview.
+
+    The rebuild runs while LIVE Studio's window may still be resizing, so some
+    sources get sized against a stale preview rect (observed: 216x384 vs the
+    final 288x512) and land ~76% wide. Sources are matched back to their OBS
+    items by (name, clip) - the clip equals the OBS crop, which uniquely
+    identifies the three Tarkov game captures and the full-frame band.
+    """
+    data = json.loads(OBS_COLLECTION.read_text(encoding="utf-8"))
+    by_uuid = {s.get("uuid"): s for s in data["sources"]}
+    items_by_key: dict[tuple, dict] = {}
+    for sc in data["sources"]:
+        if sc.get("id") != "scene":
+            continue
+        for it in sc["settings"].get("items", []):
+            src = by_uuid.get(it.get("source_uuid")) or {}
+            key = (str(it.get("name")), tuple(int(it.get(k, 0)) for k in
+                   ("crop_left", "crop_top", "crop_right", "crop_bottom")))
+            items_by_key[key] = {
+                "name": it.get("name"),
+                "kind": src.get("id"),
+                "settings": src.get("settings") or {},
+                "pos": (float(it["pos"]["x"]), float(it["pos"]["y"])),
+                "bounds": (float(it["bounds"]["x"]), float(it["bounds"]["y"])),
+                "crop": tuple(int(it.get(k, 0)) for k in
+                              ("crop_left", "crop_top", "crop_right", "crop_bottom")),
+            }
+
+    r = ls.run(f"const s = await {S}.source.getCurrentSceneSourceParamsSnapshot() || [];"
+               f"return JSON.stringify(s.filter(x => (x.name||'').startsWith({json.dumps(NAME_PREFIX)}))"
+               f".map(x => ({{id:x.id, n:x.name, tr:x.track, clip:x.clip}})));")
+    srcs = json.loads(r.get("value")) if isinstance(r, dict) else []
+    canvas = canvas_sizes()
+    fixed = 0
+    for s in srcs:
+        name = str(s.get("n", ""))
+        if name.startswith(NAME_PREFIX):
+            name = name[len(NAME_PREFIX):]
+        clip = s.get("clip") or {}
+        key = (name, (clip.get("x") or 0, clip.get("y") or 0, clip.get("z") or 0, clip.get("w") or 0))
+        item = items_by_key.get(key)
+        if not item:
+            continue
+        track = int(s.get("tr") or 0)
+        cnv = canvas.get(track) or (1920, 1080)
+        global canvas_w, canvas_h
+        canvas_w, canvas_h = cnv
+        res = apply_geometry(s["id"], item, cnv)
+        fixed += 1
+    print(f"  refit: re-applied geometry to {fixed} source(s) against the live preview")
+    return fixed
+
+
+def canvas_sizes() -> dict[int, tuple[int, int]]:
+    r = ls.run(f"const s = await {S}.streamSetting.getSettings();"
+               f"return {{l: s.resolution, p: s.secondResolution}};")
+    v = r.get("value") or {}
+    return {0: tuple(v.get("l") or (1920, 1080)), 1: tuple(v.get("p") or (1080, 1920))}
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--scene", default="V_GAME_Tarkov")
@@ -270,6 +331,8 @@ def main(argv=None) -> int:
     ap.add_argument("--clean", action="store_true")
     ap.add_argument("--with-camera", action="store_true",
                     help="also clone the camera (OFF while OBS is streaming: the webcam is single-access)")
+    ap.add_argument("--refit", action="store_true",
+                    help="re-apply geometry to existing mirrored sources against the live preview")
     args = ap.parse_args(argv)
 
     try:
@@ -290,6 +353,10 @@ def main(argv=None) -> int:
     sizes = r.get("value") or {}
     canvas = {0: tuple(sizes.get("landscape") or (1920, 1080)),
               1: tuple(sizes.get("portrait") or (1080, 1920))}
+
+    if args.refit:
+        refit_all()
+        return 0
 
     if args.clean:
         before = existing_ids()
