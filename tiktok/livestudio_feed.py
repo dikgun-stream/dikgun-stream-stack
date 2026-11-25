@@ -166,7 +166,12 @@ def main(argv=None) -> int:
                             "cx": canvas[track][0], "cy": canvas[track][1],
                             # portrait carries the mixed OBS audio; landscape stays silent
                             "enableAudio": track == 1,
-                            "enableCustomResolution": False, "zoom": 1},
+                            "enableCustomResolution": False, "zoom": 1,
+                            # AUDIO_MONITOR_STREAM (=1): send the audio to the TikTok
+                            # broadcast only, NEVER to the playback device. The default
+                            # (STREAM_AND_DEVICE=3) plays OBS's mix out of the speakers,
+                            # OBS's Desktop Audio captures it, and it loops forever.
+                            "audio": {"monitorType": 1}},
                 "track": track}
         added = run(f"const d={json.dumps(desc)};"
                     f"try{{const r=await {S}.source.addSource(d,{{recordHistory:false}});return r;}}"
@@ -180,6 +185,18 @@ def main(argv=None) -> int:
         rename_to = FEED_NAMES[track]
         run(f"try{{ await {S}.source.updateSourceName({json.dumps(sid)}, {json.dumps(rename_to)});"
             f" return 1; }}catch(e){{ return String(e&&e.message||e); }}")
+        # enforce stream-only monitoring on the created source (belt and braces:
+        # the payload carries it, but the app may normalise it on create)
+        sid_json = json.dumps(sid)
+        set_ok = run(
+            f"const id={sid_json};"
+            f"try{{ await {S}.source.updateSourceAudio(id, {{monitorType: 1}}); return 'updateSourceAudio'; }}"
+            f"catch(e1){{ try{{ await {S}.source.updateSource(id, {{audio: {{monitorType: 1}}}}, {{}});"
+            f" return 'updateSource'; }}catch(e2){{ return 'FAILED: ' + (e2.message || e1.message || ''); }} }}")
+        mon = run(f"const s = await {S}.source.getCurrentSceneSourceParamsSnapshot() || [];"
+                  f"const m = s.filter(x => x.id === {sid_json});"
+                  f"return m.length && m[0].audio ? m[0].audio.monitorType : null;")
+        print(f"    audio monitor: {mon} (1 = stream only, no device playback) via {set_ok}")
         cur = read_back(rename_to) or {}
         own = (cur.get("transform") or {}).get("size") or {}
         vp = reported_viewport(path)
