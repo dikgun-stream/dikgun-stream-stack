@@ -253,6 +253,11 @@ python obs-build/build_vertical.py
 python obs-build/add_apex_hud_insets.py            # dry run
 python obs-build/add_apex_hud_insets.py --apply    # writes + timestamped backup
 powershell -File obs-build/reload_apex_hud.ps1     # stop OBS unsaved -> apply -> restart
+
+# TikTok live: the vertical canvas carries several stream outputs, so a fresh
+# per-session TikTok key is one command (OBS must be closed)
+python obs-build/set-tiktok-key.py --key "<key from TikTok LIVE Center>"
+python obs-build/set-tiktok-key.py --remove        # take TikTok back off
 ```
 
 **(e) Limits — these cost real time, do not skip.**
@@ -393,7 +398,9 @@ python promo_build.py --songs "black-sky.m4a|42|78; WUBS.opus|0|40" --duration 6
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:7475/api/live -ContentType 'application/json' -Body '{"action":"start"}'
 ```
 
-**(e) Limits.** **YouTube horizontal is not automatable.** Aitum Multistream registers no start/stop hotkey (checked against all 354 OBS hotkeys), so that output needs a manual click in the Aitum dock; `yt-live.bat` only brings OBS forward to make the click obvious. Twitch and YouTube-vertical *are* fully automatic.
+**(e) Limits.** **Check Aitum Multistream before using it:** its config holds a *Twitch* output carrying the same key as OBS's native stream output, so starting Multistream would push Twitch twice. OBS native (Twitch) + Aitum Vertical (YouTube/TikTok) is the working topology; Multistream's entries are stale.
+
+**YouTube horizontal is not automatable.** Aitum Multistream registers no start/stop hotkey (checked against all 354 OBS hotkeys), so that output needs a manual click in the Aitum dock; `yt-live.bat` only brings OBS forward to make the click obvious. Twitch and YouTube-vertical *are* fully automatic.
 
 ---
 
@@ -497,7 +504,7 @@ Vertical (11, on the Aitum canvas): `Vertical Scene`, `V_GAME_Apex`, `V_GAME_Dea
 | 3 | **BF6 / The Finals live templates** | Auto-clipping only has a live template for Apex (Deadlock reuses `find_kill_badge`) |
 | 4 | ~~**9:16 vertical promo export**~~ | **FIXED** — `--vertical` renders 1080×1920: gameplay is centre-cropped, letter cards and the outro are fitted and padded on the brand ink so the DIKGUN word is never cut. Verified 1080×1920, cards padded (top-band std 1.63 vs 18–50 for gameplay), horizontal output unchanged |
 | 5 | **Outro beats hand-set** | `0.30, 2.00` hardcoded, ~80–120 ms off the actual kicks |
-| 6 | **TikTok live** | Not blocked, but manual per session: Aitum Multistream takes a TikTok RTMP key (1080×1920, H264, 60 fps, CBR 8000 kbps, keyframe 2 s) which **expires every session** and must be pasted in the Aitum dock; Multistream exposes no start/stop hotkey, so it is one click, not part of `/api/live`. Alternative: OBS Virtual Camera → TikTok Live Studio (video only; give Live Studio the mic and desktop audio directly or you get doubled audio) |
+| 6 | **TikTok live** | Works, automated except the key itself. The **Aitum Vertical canvas holds a `stream_outputs` list** (already carrying YouTube vertical), so `obs-build/set-tiktok-key.py` writes a fresh TikTok output there and the existing `VerticalCanvasDockStartStreaming` hotkey — which `/api/live` already triggers — starts TikTok alongside YouTube. Canvas is natively 1080×1920; the helper raises the canvas bitrate to 6000 kbps (TikTok guidance is 8000; it is shared with YouTube vertical). Keys expire every session, so the only manual step is pasting the fresh key. **Live Studio is not needed**; keep it only as a fallback (OBS Virtual Camera → Live Studio is video-only, and audio doubles unless Live Studio gets the mic and desktop audio directly) |
 | 7 | **Auto-clip not live-tested** | Validated on recorded footage at real poll rate; never fired a real replay buffer |
 | 8 | **No betting / economy** | No points, currency or wagering system exists |
 | 9 | **`--prefer` starves the rotation** | R6/Deadlock get little when BF6 is favoured across five games |
