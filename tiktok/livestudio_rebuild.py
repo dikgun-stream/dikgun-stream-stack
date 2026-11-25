@@ -35,6 +35,52 @@ def run(cmd: list[str]) -> int:
     return subprocess.call([sys.executable, *cmd])
 
 
+
+def ensure_studio_view() -> bool:
+    """LIVE Studio opens on its Home page after a launch, and addSource fails
+    ("get current scene failed") until the Studio view is entered. Synthetic DOM
+    clicks do not work here - the home "Go LIVE" button needs a real input event,
+    so this dispatches a CDP mouse click at its centre.
+    """
+    import asyncio
+    import websockets
+    import lsclient as _ls
+
+    txt = _ls.eval_probe("(() => (document.body.innerText||'').slice(0,400))()").get("value") or ""
+    if "Add source" in str(txt):
+        return True
+    rect = _ls.eval_probe("""(() => {
+      const el = document.querySelector('[class*="immersive-header__go-live"]');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return JSON.stringify({x: r.left + r.width/2, y: r.top + r.height/2});
+    })()""").get("value")
+    if not rect:
+        return False
+    import json as _json
+    pos = _json.loads(rect) if isinstance(rect, str) else rect
+
+    async def click():
+        t = _ls.main_target()
+        async with websockets.connect(t["webSocketDebuggerUrl"], open_timeout=15) as ws:
+            async def send(method, params):
+                await ws.send(_json.dumps({"id": 1, "method": method, "params": params}))
+                while True:
+                    m = _json.loads(await asyncio.wait_for(ws.recv(), timeout=20))
+                    if m.get("id") == 1:
+                        return m
+            base = {"x": pos["x"], "y": pos["y"], "button": "left", "clickCount": 1}
+            await send("Input.dispatchMouseEvent", {**base, "type": "mouseMoved", "buttons": 0})
+            await send("Input.dispatchMouseEvent", {**base, "type": "mousePressed", "buttons": 1})
+            await send("Input.dispatchMouseEvent", {**base, "type": "mouseReleased", "buttons": 0})
+
+    asyncio.run(click())
+    import time as _t
+    _t.sleep(5)
+    txt = _ls.eval_probe("(() => (document.body.innerText||'').slice(0,400))()").get("value") or ""
+    return "Add source" in str(txt)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Rebuild LIVE Studio as an OBS clone")
     ap.add_argument("--game", choices=sorted(GAME_SCENES), default="apex")
@@ -46,6 +92,9 @@ def main(argv=None) -> int:
     extra = [] if not args.with_camera else []
     if args.with_camera:
         extra.append("--with-camera")
+
+    ok = ensure_studio_view()
+    print(f"  studio view: {'ready' if ok else 'NOT entered (home page?)'}")
 
     # LIVE Studio starts scene-less after a restart; addSource needs a scene.
     # createScene(name, orientation='dual', select=true) creates + activates it
